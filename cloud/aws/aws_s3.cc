@@ -6,6 +6,7 @@
 //
 #ifndef ROCKSDB_LITE
 #ifdef USE_AWS
+#include <mutex>
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
 #include <aws/core/utils/crypto/CryptoStream.h>
@@ -58,6 +59,8 @@
 #ifdef _WIN32_WINNT
 #undef GetMessage
 #endif
+
+std::once_flag flag1;
 
 namespace ROCKSDB_NAMESPACE {
 #ifdef USE_AWS
@@ -120,7 +123,7 @@ class AwsS3ClientWrapper {
       client_ = std::make_shared<Aws::S3::S3Client>(
           creds, config,
           Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
-          true /* useVirtualAddressing */);
+          false /* useVirtualAddressing */);
     } else {
       client_ = std::make_shared<Aws::S3::S3Client>(config);
     }
@@ -446,6 +449,7 @@ class S3StorageProvider : public CloudStorageProviderImpl {
 };
 
 Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
+  std::call_once(flag1, [](){Aws::InitAPI(Aws::SDKOptions());}); 
   auto cfs = dynamic_cast<CloudFileSystem*>(options.env->GetFileSystem().get());
   assert(cfs);
   const auto& cloud_opts = cfs->GetCloudFileSystemOptions();
@@ -467,8 +471,14 @@ Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
     }
   }
   Aws::Client::ClientConfiguration config;
+  
   Status status = AwsCloudOptions::GetClientConfiguration(
       cfs, cloud_opts.src_bucket.GetRegion(), &config);
+  config.region = "";
+  config.endpointOverride = "127.0.0.1:9000";
+  config.enableHostPrefixInjection = false;
+  config.scheme = Aws::Http::Scheme::HTTP;
+  config.verifySSL = false;
   if (status.ok()) {
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> creds;
     status = cloud_opts.credentials.GetCredentialsProvider(&creds);
