@@ -407,6 +407,12 @@ class CloudFileSystemOptions {
   // Default: 1 hour
   std::optional<std::chrono::seconds> cloud_file_deletion_delay;
 
+  
+  // Override the http endpoint used to talk to a service.
+  //
+  // Default: ""
+  std::string endpoint_override;
+
   CloudFileSystemOptions(
       CloudType _cloud_type = CloudType::kCloudAws,
       LogType _log_type = LogType::kLogKafka,
