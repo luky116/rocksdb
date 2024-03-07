@@ -58,6 +58,10 @@ class ManifestReader: public LocalManifestReader {
                                                const std::string& fname,
                                                uint64_t* maxFileNumber);
 
+  static IOStatus GetMaxManifestSequenceFromManifest(FileSystem* fs,
+                                                     const std::string& fname,
+                                                     uint64_t* max_manifest_seq);
+
  private:
   std::string bucket_prefix_;
 };
