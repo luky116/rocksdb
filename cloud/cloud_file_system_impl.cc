@@ -794,6 +794,11 @@ IOStatus CloudFileSystemImpl::CopyLocalFileToDest(
     cloud_file_deletion_scheduler_->UnscheduleFileDeletion(
         basename(local_name));
   }
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] CopyLocalFileToDest, is_master: %d, local_name: %s, dest_name: %s",
+      Name(), cloud_fs_options.is_master, local_name.c_str(), dest_name.c_str());
+  if (!cloud_fs_options.is_master) {
+    return IOStatus::OK();
+  }
   return GetStorageProvider()->PutCloudObject(local_name, GetDestBucketName(),
                                               dest_name);
 }
@@ -805,6 +810,11 @@ IOStatus CloudFileSystemImpl::DeleteCloudFileFromDest(
   auto path = GetDestObjectPath() + pathsep + base;
   auto bucket = GetDestBucketName();
   if (!cloud_file_deletion_scheduler_) {
+    Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] DeleteCloudFileFromDest, is_master: %d, path: %s",
+        Name(), cloud_fs_options.is_master, path.c_str());
+    if (!cloud_fs_options.is_master) {
+      return IOStatus::OK();
+    }
     return GetStorageProvider()->DeleteCloudObject(bucket, path);
   }
   std::weak_ptr<Logger> info_log_wp = info_log_;
@@ -813,10 +823,15 @@ IOStatus CloudFileSystemImpl::DeleteCloudFileFromDest(
   auto file_deletion_runnable =
       [path = std::move(path), bucket = std::move(bucket),
        info_log_wp = std::move(info_log_wp),
-       storage_provider_wp = std::move(storage_provider_wp)]() {
+       storage_provider_wp = std::move(storage_provider_wp), is_master = cloud_fs_options.is_master]() {
         auto storage_provider = storage_provider_wp.lock();
         auto info_log = info_log_wp.lock();
         if (!storage_provider || !info_log) {
+          return;
+        }
+        Log(InfoLogLevel::INFO_LEVEL, info_log, "[%s] DeleteCloudFileFromDest, is_master: %d",
+            is_master);
+        if (!is_master) {
           return;
         }
         auto st = storage_provider->DeleteCloudObject(bucket, path);
@@ -840,8 +855,12 @@ IOStatus CloudFileSystemImpl::SaveIdentityToCloud(const std::string& localfile,
   auto st = ReadFileToString(base_fs_.get(), localfile, &dbid);
   dbid = trim(dbid);
 
+
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] SaveIdentityToCloud, is_master: %d, local_path: %s",
+      Name(), cloud_fs_options.is_master, localfile.c_str());
+
   // Upload ID file to provider
-  if (st.ok()) {
+  if (st.ok() && cloud_fs_options.is_master) {
     st = GetStorageProvider()->PutCloudObject(localfile, GetDestBucketName(),
                                               idfile);
   }
@@ -1597,7 +1616,7 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
   // We only cleanup files which don't belong to cookie_on_open. Also, we do it
   // before rolling the epoch, so that newly generated CM/M files won't be
   // cleaned up.
-  if (st.ok() && !read_only) {
+  if (st.ok() && !read_only && cloud_fs_options.is_master) {
     std::vector<std::string> active_cookies{
         cloud_fs_options.cookie_on_open, cloud_fs_options.new_cookie_on_open};
     st = DeleteLocalInvisibleFiles(local_dbname, active_cookies);
@@ -1613,7 +1632,8 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
     }
   }
 
-  if (st.ok() && cloud_fs_options.roll_cloud_manifest_on_open) {
+  if (st.ok() && cloud_fs_options.roll_cloud_manifest_on_open &&
+      cloud_fs_options.is_master) {
     // Rolls the new epoch in CLOUDMANIFEST (only for existing databases)
     st = RollNewEpoch(local_dbname);
     if (st.IsNotFound()) {
@@ -2025,6 +2045,13 @@ IOStatus CloudFileSystemImpl::UploadManifest(const std::string& local_dbname,
         "Dest bucket has to be specified when uploading manifest files");
   }
 
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] UploadManifest, is_master: %d",
+      Name(), cloud_fs_options.is_master);
+  
+  if (!cloud_fs_options.is_master) {
+    return IOStatus::OK();
+  }
+
   auto st = GetStorageProvider()->PutCloudObject(
       ManifestFileWithEpoch(local_dbname, epoch), GetDestBucketName(),
       ManifestFileWithEpoch(GetDestObjectPath(), epoch));
@@ -2039,6 +2066,12 @@ IOStatus CloudFileSystemImpl::UploadCloudManifest(
   if (!HasDestBucket()) {
     return IOStatus::InvalidArgument(
         "Dest bucket has to be specified when uploading CloudManifest files");
+  }
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] UploadCloudManifest, is_master: %d",
+      Name(), cloud_fs_options.is_master);
+
+  if (!cloud_fs_options.is_master) {
+    return IOStatus::OK();
   }
   // upload the cloud manifest file corresponds to cookie (i.e.,
   // CLOUDMANIFEST-cookie)
@@ -2130,6 +2163,9 @@ IOStatus CloudFileSystemImpl::SaveDbid(const std::string& bucket_name,
   std::unordered_map<std::string, std::string> metadata;
   metadata["dirname"] = dirname;
 
+
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] SaveDbid, is_master: %d, dirname: %s",
+      Name(), cloud_fs_options.is_master, dirname.c_str());
   auto st = GetStorageProvider()->PutCloudObjectMetadata(bucket_name, dbidkey,
                                                          metadata);
 
@@ -2225,6 +2261,11 @@ IOStatus CloudFileSystemImpl::DeleteDbid(const std::string& bucket,
                                          const std::string& dbid) {
   // fetch the list all all dbids
   std::string dbidkey = GetDbIdKey(dbid);
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] deletedbid, is_master: %d, bucket: %s, dbid: %s",
+      Name(), cloud_fs_options.is_master, bucket.c_str(), dbid.c_str());
+  if (!cloud_fs_options.is_master) {
+    return IOStatus::OK();
+  }
   auto st = GetStorageProvider()->DeleteCloudObject(bucket, dbidkey);
   Log(InfoLogLevel::DEBUG_LEVEL, info_log_,
       "[%s] %s DeleteDbid DeleteDbid(%s) %s", Name(), bucket.c_str(),
