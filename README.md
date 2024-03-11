@@ -1,3 +1,5 @@
+forked from repo: https://github.com/rockset/rocksdb-cloud, commit id: 0d2b89541ea8c072eb2867831f12b2ba9b3ef0a3
+
 ## RocksDB-Cloud: A Key-Value Store for Cloud Applications
 
 RocksDB-Cloud is a C++ library that brings the power of RocksDB to AWS, Google Cloud and Microsoft Azure.
