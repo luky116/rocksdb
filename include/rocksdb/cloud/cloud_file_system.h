@@ -666,7 +666,7 @@ class CloudFileSystem : public FileSystem {
       const std::string& local_dbname, uint64_t* max_file_number) = 0;
  
   virtual IOStatus GetMaxManifestSequenceFromCurrentManifest(
-      const std::string& local_dbname, uint64_t* max_manifest_seq) {
+      const std::string& , uint64_t* ) {
     return IOStatus::NotSupported();
   } 
 
