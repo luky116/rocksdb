@@ -65,7 +65,6 @@ class AwsFileSystem : public CloudFileSystemImpl {
   // standard-region which might not satisfy read-your-own-writes. So,
   // explicitly make the default region be us-west-2.
   static constexpr const char* default_region = "us-west-2";
-
  private:
   //
   // The AWS credentials are specified to the constructor via

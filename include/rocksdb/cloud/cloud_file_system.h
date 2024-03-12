@@ -298,6 +298,9 @@ class CloudFileSystemOptions {
   // Default: false
   bool resync_on_open;
 
+  // if rocksdb works in master process
+  bool is_master;
+
   // Experimental option!
   // This option only affects how resync_on_open works. If resync_on_open is true,
   // and resync_manifest_on_open is true, besides fetching CLOUDMANFIEST from s3,
@@ -574,6 +577,10 @@ class CloudFileSystem : public FileSystem {
   const std::shared_ptr<CloudLogController>& GetLogController() const {
     return cloud_fs_options.cloud_log_controller;
   }
+
+  void SwitchMaster(bool is_master) {
+    cloud_fs_options.is_master = is_master;
+  }
   
   // The SrcBucketName identifies the cloud storage bucket and
   // GetSrcObjectPath specifies the path inside that bucket
@@ -657,6 +664,11 @@ class CloudFileSystem : public FileSystem {
 
   virtual IOStatus GetMaxFileNumberFromCurrentManifest(
       const std::string& local_dbname, uint64_t* max_file_number) = 0;
+ 
+  virtual IOStatus GetMaxManifestSequenceFromCurrentManifest(
+      const std::string& , uint64_t* ) {
+    return IOStatus::NotSupported();
+  } 
 
   virtual IOStatus DeleteCloudInvisibleFiles(
       const std::vector<std::string>& active_cookies) = 0;

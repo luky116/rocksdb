@@ -215,5 +215,47 @@ IOStatus ManifestReader::GetMaxFileNumberFromManifest(FileSystem* fs,
   }
   return s;
 }
+
+IOStatus ManifestReader::GetMaxManifestSequenceFromManifest(
+    FileSystem* fs, const std::string& fname, uint64_t* max_manifest_seq) {
+  // We check if the file exists to return IsNotFound() error status if it does
+  // (NewSequentialFile) doesn't have the same behavior on file not existing --
+  // it returns IOError instead.
+  const IOOptions io_opts;
+  IODebugContext* dbg = nullptr;
+  auto s = fs->FileExists(fname, io_opts, dbg);
+  if (!s.ok()) {
+    return s;
+  }
+  std::unique_ptr<FSSequentialFile> file;
+  s = fs->NewSequentialFile(fname, FileOptions(), &file, dbg);
+  if (!s.ok()) {
+    return s;
+  }
+
+  VersionSet::LogReporter reporter;
+  reporter.status = &s;
+  log::Reader reader(nullptr,
+                     std::unique_ptr<SequentialFileReader>(
+                     new SequentialFileReader(std::move(file), fname)),
+                     &reporter, true /*checksum*/, 0);
+
+  Slice record;
+  std::string scratch;
+
+  *max_manifest_seq = 0;
+  while (reader.ReadRecord(&record, &scratch) && s.ok()) {
+    VersionEdit edit;
+    s = status_to_io_status(edit.DecodeFrom(record));
+    if (!s.ok()) {
+      break;
+    }
+    uint64_t f = edit.GetManifestUpdateSequence();
+    assert(f > *max_manifest_seq);
+    *max_manifest_seq = f;
+  }
+  return s;
+}
+
 }  // namespace ROCKSDB_NAMESPACE
 #endif /* ROCKSDB_LITE */
