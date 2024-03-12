@@ -250,8 +250,7 @@ IOStatus ManifestReader::GetMaxManifestSequenceFromManifest(
     if (!s.ok()) {
       break;
     }
-    uint64_t f;
-    f = edit.GetManifestUpdateSequence();
+    uint64_t f = edit.GetManifestUpdateSequence();
     assert(f > *max_manifest_seq);
     *max_manifest_seq = f;
   }
