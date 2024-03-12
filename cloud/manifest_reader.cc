@@ -235,7 +235,7 @@ IOStatus ManifestReader::GetMaxManifestSequenceFromManifest(
 
   VersionSet::LogReporter reporter;
   reporter.status = &s;
-  log::Reader reader(NULL,
+  log::Reader reader(nullptr,
                      std::unique_ptr<SequentialFileReader>(
                      new SequentialFileReader(std::move(file), fname)),
                      &reporter, true /*checksum*/, 0);
