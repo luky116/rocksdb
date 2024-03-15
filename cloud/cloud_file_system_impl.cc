@@ -794,6 +794,7 @@ IOStatus CloudFileSystemImpl::CopyLocalFileToDest(
     cloud_file_deletion_scheduler_->UnscheduleFileDeletion(
         basename(local_name));
   }
+  //TODO(wangshaoyi): temporary debug log
   Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] CopyLocalFileToDest, is_master: %d, local_name: %s, dest_name: %s",
       Name(), cloud_fs_options.is_master, local_name.c_str(), dest_name.c_str());
   if (!cloud_fs_options.is_master) {
@@ -810,6 +811,7 @@ IOStatus CloudFileSystemImpl::DeleteCloudFileFromDest(
   auto path = GetDestObjectPath() + pathsep + base;
   auto bucket = GetDestBucketName();
   if (!cloud_file_deletion_scheduler_) {
+    //TODO(wangshaoyi): temporary debug log
     Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] DeleteCloudFileFromDest, is_master: %d, path: %s",
         Name(), cloud_fs_options.is_master, path.c_str());
     if (!cloud_fs_options.is_master) {
@@ -829,6 +831,7 @@ IOStatus CloudFileSystemImpl::DeleteCloudFileFromDest(
         if (!storage_provider || !info_log) {
           return;
         }
+        //TODO(wangshaoyi): temporary debug log
         Log(InfoLogLevel::INFO_LEVEL, info_log, "[%s] DeleteCloudFileFromDest, is_master: %d",
             is_master);
         if (!is_master) {
@@ -855,7 +858,7 @@ IOStatus CloudFileSystemImpl::SaveIdentityToCloud(const std::string& localfile,
   auto st = ReadFileToString(base_fs_.get(), localfile, &dbid);
   dbid = trim(dbid);
 
-
+  //TODO(wangshaoyi): temporary debug log
   Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] SaveIdentityToCloud, is_master: %d, local_path: %s",
       Name(), cloud_fs_options.is_master, localfile.c_str());
 
@@ -2044,7 +2047,7 @@ IOStatus CloudFileSystemImpl::UploadManifest(const std::string& local_dbname,
     return IOStatus::InvalidArgument(
         "Dest bucket has to be specified when uploading manifest files");
   }
-
+  //TODO(wangshaoyi): temporary debug log
   Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] UploadManifest, is_master: %d",
       Name(), cloud_fs_options.is_master);
   
@@ -2067,6 +2070,7 @@ IOStatus CloudFileSystemImpl::UploadCloudManifest(
     return IOStatus::InvalidArgument(
         "Dest bucket has to be specified when uploading CloudManifest files");
   }
+  //TODO(wangshaoyi): temporary debug log
   Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] UploadCloudManifest, is_master: %d",
       Name(), cloud_fs_options.is_master);
 
@@ -2163,7 +2167,7 @@ IOStatus CloudFileSystemImpl::SaveDbid(const std::string& bucket_name,
   std::unordered_map<std::string, std::string> metadata;
   metadata["dirname"] = dirname;
 
-
+  //TODO(wangshaoyi): temporary debug log
   Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] SaveDbid, is_master: %d, dirname: %s",
       Name(), cloud_fs_options.is_master, dirname.c_str());
   auto st = GetStorageProvider()->PutCloudObjectMetadata(bucket_name, dbidkey,
@@ -2261,6 +2265,7 @@ IOStatus CloudFileSystemImpl::DeleteDbid(const std::string& bucket,
                                          const std::string& dbid) {
   // fetch the list all all dbids
   std::string dbidkey = GetDbIdKey(dbid);
+  //TODO(wangshaoyi): temporary debug log
   Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] deletedbid, is_master: %d, bucket: %s, dbid: %s",
       Name(), cloud_fs_options.is_master, bucket.c_str(), dbid.c_str());
   if (!cloud_fs_options.is_master) {
