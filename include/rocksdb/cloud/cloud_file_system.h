@@ -301,6 +301,12 @@ class CloudFileSystemOptions {
   // if rocksdb works in master process
   bool is_master;
 
+  // user defined meta upload function
+  // used to garantee only one server to update remote meta
+  std::function<bool(const std::string& local_path,
+      const std::string& bucket_name,
+      const std::string& object_path)> upload_meta_func;
+
   // Experimental option!
   // This option only affects how resync_on_open works. If resync_on_open is true,
   // and resync_manifest_on_open is true, besides fetching CLOUDMANFIEST from s3,

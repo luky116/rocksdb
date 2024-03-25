@@ -2077,6 +2077,18 @@ IOStatus CloudFileSystemImpl::UploadCloudManifest(
   if (!cloud_fs_options.is_master) {
     return IOStatus::OK();
   }
+
+  if (cloud_fs_options.upload_meta_func) {
+    bool success = cloud_fs_options.upload_meta_func(MakeCloudManifestFile(local_dbname, cookie),
+        GetDestBucketName(), MakeCloudManifestFile(GetDestObjectPath(), cookie));
+    if (!success) {
+      Log(InfoLogLevel::WARN_LEVEL, info_log_,
+          "[%s] UploadCloudManifest, user-defined upload failed", Name());
+      return IOStatus::IOError("user defined upload failed");
+    }
+    return IOStatus::OK();
+  }
+
   // upload the cloud manifest file corresponds to cookie (i.e.,
   // CLOUDMANIFEST-cookie)
   auto st = GetStorageProvider()->PutCloudObject(
