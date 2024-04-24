@@ -575,6 +575,9 @@ class CloudFileSystem : public FileSystem {
   virtual IOStatus DeleteDbid(const std::string& bucket_prefix,
                               const std::string& dbid) = 0;
 
+  virtual IOStatus DeleteCloudObject(const std::string& bucket,
+                                     const std::string& objectpath) = 0;
+
   Logger* GetLogger() const { return info_log_.get(); }
   const std::shared_ptr<CloudStorageProvider>&  GetStorageProvider() const {
     return cloud_fs_options.storage_provider;

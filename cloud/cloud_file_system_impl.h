@@ -135,6 +135,9 @@ class CloudFileSystemImpl : public CloudFileSystem {
   IOStatus DeleteDbid(const std::string& bucket,
                       const std::string& dbid) override;
 
+  virtual IOStatus DeleteCloudObject(const std::string& bucket,
+                                     const std::string& objectpath) override;
+
   IOStatus SanitizeDirectory(const DBOptions& options,
                              const std::string& clone_name, bool read_only);
   IOStatus LoadCloudManifest(const std::string& local_dbname, bool read_only);
