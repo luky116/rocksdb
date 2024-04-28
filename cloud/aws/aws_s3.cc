@@ -819,7 +819,7 @@ IOStatus S3StorageProvider::CopyCloudObject(
   Aws::String src_object = ToAwsString(object_path_src);
   Aws::String dest_object = ToAwsString(object_path_dest);
 
-  Aws::String src_url = src_bucket + src_object;
+  Aws::String src_url = src_bucket + "/" + src_object;
 
   // create copy request
   Aws::S3::Model::CopyObjectRequest request;
