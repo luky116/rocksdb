@@ -832,7 +832,7 @@ IOStatus CloudFileSystemImpl::DeleteCloudFileFromDest(
           return;
         }
         //TODO(wangshaoyi): temporary debug log
-        Log(InfoLogLevel::INFO_LEVEL, info_log, "[%s] DeleteCloudFileFromDest, is_master: %d",
+        Log(InfoLogLevel::INFO_LEVEL, info_log, "DeleteCloudFileFromDest, is_master: %d",
             is_master);
         if (!is_master) {
           return;
@@ -2287,6 +2287,14 @@ IOStatus CloudFileSystemImpl::DeleteDbid(const std::string& bucket,
   Log(InfoLogLevel::DEBUG_LEVEL, info_log_,
       "[%s] %s DeleteDbid DeleteDbid(%s) %s", Name(), bucket.c_str(),
       dbid.c_str(), st.ToString().c_str());
+  return st;
+}
+
+IOStatus CloudFileSystemImpl::DeleteCloudObject(const std::string& bucket,
+                                                const std::string& objectpath) {
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "[%s] deletecloudobject, bucket: %s, objectpath: %s",
+      Name(), bucket.c_str(), objectpath.c_str());
+  auto st = GetStorageProvider()->DeleteCloudObject(bucket, objectpath);
   return st;
 }
 
