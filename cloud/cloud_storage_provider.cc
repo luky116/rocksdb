@@ -166,6 +166,8 @@ IOStatus CloudStorageWritableFileImpl::Close(const IOOptions& opts,
       "[%s] CloudWritableFile closing %s", Name(), fname_.c_str());
   assert(status_.ok());
 
+  uint64_t f_size = local_file_->GetFileSize(opts, dbg);
+
   // close local file
   auto st = local_file_->Close(opts, dbg);
   if (!st.ok()) {
@@ -185,8 +187,16 @@ IOStatus CloudStorageWritableFileImpl::Close(const IOOptions& opts,
       return status_;
     }
 
+    // flush and compaction will reopen newly generated file,
+    // so we add newly writablefile to sst_file_cache to reduce once s3 io
+    bool delete_local_file = true;
+    if (cfs_->GetCloudFileSystemOptions().sst_file_cache) {
+      cfs_->FileCacheInsert(fname_, f_size);
+      delete_local_file = false;
+    }
+
     // delete local file
-    if (!cfs_->GetCloudFileSystemOptions().keep_local_sst_files) {
+    if (!cfs_->GetCloudFileSystemOptions().keep_local_sst_files && delete_local_file) {
       status_ = cfs_->GetBaseFileSystem()->DeleteFile(fname_, opts, dbg);
       if (!status_.ok()) {
         Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
