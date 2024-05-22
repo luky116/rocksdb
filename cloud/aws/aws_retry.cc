@@ -9,6 +9,7 @@
 #ifdef USE_AWS
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/ClientConfiguration.h>
+#include <aws/s3-crt/ClientConfiguration.h>
 #include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #include <aws/core/client/RetryStrategy.h>
 #endif  // USE_AWS
@@ -118,6 +119,26 @@ long AwsRetryStrategy::CalculateDelayBeforeNextRetry(
 Status AwsCloudOptions::GetClientConfiguration(
     CloudFileSystem* fs, const std::string& region,
     Aws::Client::ClientConfiguration* config) {
+  config->connectTimeoutMs = 30000;
+  config->requestTimeoutMs = 600000;
+
+  const auto& cloud_fs_options = fs->GetCloudFileSystemOptions();
+  // Setup how retries need to be done
+  config->retryStrategy = std::make_shared<AwsRetryStrategy>(fs);
+  if (cloud_fs_options.request_timeout_ms != 0) {
+    config->requestTimeoutMs = cloud_fs_options.request_timeout_ms;
+  }
+  if (cloud_fs_options.endpoint_override != "") {
+    config->endpointOverride = cloud_fs_options.endpoint_override;
+  }
+
+  config->region = ToAwsString(region);
+  return Status::OK();
+}
+
+Status AwsCloudOptions::GetClientConfiguration(
+    CloudFileSystem* fs, const std::string& region,
+    Aws::S3Crt::ClientConfiguration* config) {
   config->connectTimeoutMs = 30000;
   config->requestTimeoutMs = 600000;
 

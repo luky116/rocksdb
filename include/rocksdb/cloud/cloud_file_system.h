@@ -20,6 +20,10 @@ class AWSCredentialsProvider;
 namespace Client {
 struct ClientConfiguration;
 }  // namespace Client
+namespace S3Crt {
+struct ClientConfiguration;
+class S3CrtClient;
+}  // namespace S3Crt
 namespace S3 {
 class S3Client;
 }
@@ -93,9 +97,9 @@ class AwsCloudAccessCredentials {
   std::shared_ptr<Aws::Auth::AWSCredentialsProvider> provider;
 };
 
-using S3ClientFactory = std::function<std::shared_ptr<Aws::S3::S3Client>(
+using S3ClientFactory = std::function<std::shared_ptr<Aws::S3Crt::S3CrtClient>(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>&,
-    const Aws::Client::ClientConfiguration&)>;
+    const Aws::S3Crt::ClientConfiguration&)>;
 
 // Defines parameters required to connect to Kafka
 class KafkaLogOptions {
@@ -175,6 +179,9 @@ inline bool operator!=(const BucketOptions& lhs, const BucketOptions& rhs) {
 
 class AwsCloudOptions {
  public:
+  static Status GetClientConfiguration(
+      CloudFileSystem* fs, const std::string& region,
+      Aws::S3Crt::ClientConfiguration* config);
   static Status GetClientConfiguration(
       CloudFileSystem* fs, const std::string& region,
       Aws::Client::ClientConfiguration* config);
