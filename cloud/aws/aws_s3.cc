@@ -127,6 +127,8 @@ class AwsS3ClientWrapper {
     } else {
       client_ = std::make_shared<Aws::S3Crt::S3CrtClient>(config);
     }
+    // TODO(wangshaoyi): transfermanager is incompatible with s3crtclient
+    // temporarily commented out for compiling
     if (cloud_options.use_aws_transfer_manager) {
 //      Aws::Transfer::TransferManagerConfiguration transferManagerConfig(
 //          GetAwsTransferManagerExecutor());
