@@ -7101,6 +7101,7 @@ uint64_t VersionSet::GetObsoleteSstFilesSize() const {
   return ret;
 }
 
+// 创建 CF 的核心逻辑
 ColumnFamilyData* VersionSet::CreateColumnFamily(
     const ColumnFamilyOptions& cf_options, const ReadOptions& read_options,
     const VersionEdit* edit) {

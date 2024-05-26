@@ -3356,6 +3356,7 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   s = ColumnFamilyData::ValidateOptions(db_options, cf_options);
   if (s.ok()) {
     for (auto& cf_path : cf_options.cf_paths) {
+      // 给 cf 创建目录
       s = env_->CreateDirIfMissing(cf_path.path);
       if (!s.ok()) {
         break;
@@ -3370,16 +3371,20 @@ Status DBImpl::CreateColumnFamilyImpl(const ColumnFamilyOptions& cf_options,
   {
     InstrumentedMutexLock l(&mutex_);
 
+    // 所有的 ColumnFamilySet 都由 ColumnFamilySet 来管理
     if (versions_->GetColumnFamilySet()->GetColumnFamily(column_family_name) !=
         nullptr) {
+      // 如果 cf 已经存在了，返回用户错误
       return Status::InvalidArgument("Column family already exists");
     }
     VersionEdit edit;
     edit.AddColumnFamily(column_family_name);
     uint32_t new_id = versions_->GetColumnFamilySet()->GetNextColumnFamilyID();
+    // 更新 VERSION 文件里面 cf 的信息记录
     edit.SetColumnFamily(new_id);
     edit.SetLogNumber(logfile_number_);
     edit.SetComparatorName(cf_options.comparator->Name());
+    // TODO persist_user_defined_timestamps 是啥用处？？
     edit.SetPersistUserDefinedTimestamps(
         cf_options.persist_user_defined_timestamps);
 

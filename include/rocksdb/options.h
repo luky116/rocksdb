@@ -567,6 +567,9 @@ struct DBOptions {
   // future, support for doing storage operations such as read/write files
   // through env will be deprecated in favor of file_system (see below)
   // Default: Env::Default()
+  // 使用指定的对象与环境交互，例如读取/写入文件、安排后台工作等。（即，所有和文件系统的交互，都是由 Env 对象来完成的）
+  // 在不久的将来，通过 env 执行读取/写入文件等存储操作的支持将被弃用，转而使用 file_system（见下文）
+  // Default: Env::Default()
   Env* env = Env::Default();
 
   // Limits internal file read/write bandwidth:
@@ -672,6 +675,7 @@ struct DBOptions {
   bool use_fsync = false;
 
   // A list of paths where SST files can be put into, with its target size.
+  // 位置越靠前的存储设备，使用的优先级越高
   // Newer data is placed into paths specified earlier in the vector while
   // older data gradually moves to paths specified later in the vector.
   //
@@ -686,12 +690,15 @@ struct DBOptions {
   // is slightly more than target size under some workloads. User should give
   // some buffer room for those cases.
   //
+  // 如果没有一个路径有足够的空间来放置文件，则无论目标大小如何，文件都会被放置到最后一个路径。
   // If none of the paths has sufficient room to place a file, the file will
   // be placed to the last path anyway, despite to the target size.
   //
+  // 将较新的数据放置到较早的路径也是尽力而为。在某些极端情况下，用户应该期望用户文件被放置在更高的级别。
   // Placing newer data to earlier paths is also best-efforts. User should
   // expect user files to be placed in higher levels in some extreme cases.
-  //
+
+  // 如果留空，则仅使用一个路径，即打开数据库时传递的db_name。
   // If left empty, only one path will be used, which is db_name passed when
   // opening the DB.
   // Default: empty
@@ -1315,6 +1322,8 @@ struct DBOptions {
   // in DB files and return an error to the user, either at DB::Open time or
   // later during DB operation. The exception to this policy is the WAL file,
   // whose recovery is controlled by the wal_recovery_mode option.
+  // 默认情况下，RocksDB 将尝试检测数据库文件中的任何数据丢失或损坏
+  // ，并在 DB::Open 时或稍后在数据库操作期间向用户返回错误。此策略的例外是 WAL 文件， 其恢复由 wal_recovery_mode 选项控制。
   //
   // Best-efforts recovery (this option set to true) signals a preference for
   // opening the DB to any point-in-time valid state for each column family,
@@ -1322,6 +1331,10 @@ struct DBOptions {
   // data losses to the user as errors. In terms of RocksDB user data, this
   // is like applying WALRecoveryMode::kPointInTimeRecovery to each column
   // family rather than just the WAL.
+  // 尽力恢复（此选项设置为 true）表示优先将数据库打开到每个列族的任何时间点有效状态，
+  // 包括空/新状态，而不是默认返回非 WAL 数据因错误而丢失给用户。就 RocksDB 用户数据而言，这
+  // 就像将 WALRecoveryMode::kPointInTimeRecovery 应用于每个列
+  // family 而不仅仅是 WAL。
   //
   // Best-efforts recovery (BER) is specifically designed to recover a DB with
   // files that are missing or truncated to some smaller size, such as the
@@ -1331,6 +1344,9 @@ struct DBOptions {
   // BER is not yet designed to produce a usable DB from other corruptions to
   // DB files (which should generally be detectable by DB::VerifyChecksum()),
   // and BER does not yet attempt to recover any WAL files.
+  // 尽力而为恢复带有缺失或截断为较小大小文件的数据库，例如不完整的数据库“物理”（文件系统）副本。
+  // BER 还可以检测到 SST 文件是否已被替换为大小相同的其他文件（假设在数据库清单中跟踪了 SST 唯一 ID）。
+  // BER 尚未设计用于从其他损坏的数据库文件（通常应可通过 DB::VerifyChecksum() 检测到）中生成可用的数据库，并且 BER 尚未尝试恢复任何 WAL 文件。
   //
   // For example, if an SST or blob file referenced by the MANIFEST is missing,
   // BER might be able to find a set of files corresponding to an old "point in
@@ -1339,8 +1355,15 @@ struct DBOptions {
   // either ignored or replaced with BER, or quietly fixed regardless of BER
   // setting. BER does require at least one valid MANIFEST to recover to a
   // non-trivial DB state, unlike `ldb repair`.
+  // 例如，如果 MANIFEST 引用的 SST 或 blob 文件丢失，
+  // BER 可能能够找到与列族的旧“point in
+  // time”版本相对应的一组文件，可能来自较旧的 MANIFEST
+  // 文件。一些其他类型的 DB 文件（例如 CURRENT、LOCK、IDENTITY）
+  // 要么被忽略，要么被 BER 替换，或者无论 BER
+  // 设置如何，都会悄悄修复。与“ldb 修复”不同，BER 确实需要至少一个有效的 MANIFEST 才能恢复到非平凡的数据库状态。
   //
   // Currently, best_efforts_recovery=true is not compatible with atomic flush.
+  // 目前，best_efforts_recovery=true 与原子刷新不兼容。
   //
   // Default: false
   bool best_efforts_recovery = false;

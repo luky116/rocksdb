@@ -1681,6 +1681,7 @@ ColumnFamilyData* ColumnFamilySet::CreateColumnFamily(
     ts_sz_for_record_.insert({id, ts_sz});
   }
   max_column_family_ = std::max(max_column_family_, id);
+  // 加入到双向链表中
   // add to linked list
   new_cfd->next_ = dummy_cfd_;
   auto prev = dummy_cfd_->prev_;

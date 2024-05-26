@@ -38,6 +38,7 @@ Options SanitizeOptions(const std::string& dbname, const Options& src,
   return Options(db_options, cf_options);
 }
 
+// 默认的参数
 DBOptions SanitizeOptions(const std::string& dbname, const DBOptions& src,
                           bool read_only, Status* logger_creation_s) {
   DBOptions result(src);
@@ -421,15 +422,22 @@ Status DBImpl::Recover(
       return s;
     }
 
+    // 检查CURRENT文件是否存在，或者找一个可用的MANIFEST文件
     std::string current_fname = CurrentFileName(dbname_);
     // Path to any MANIFEST file in the db dir. It does not matter which one.
     // Since best-efforts recovery ignores CURRENT file, existence of a
     // MANIFEST indicates the recovery to recover existing db. If no MANIFEST
     // can be found, a new db will be created.
+    // db 目录中任何 MANIFEST 文件的路径。哪一个并不重要。
+    // 由于尽力恢复会忽略当前文件，因此
+    // MANIFEST 的存在表明恢复是为了恢复现有数据库。如果找不到 MANIFEST
+    // ，将创建一个新的数据库。
     std::string manifest_path;
     if (!immutable_db_options_.best_efforts_recovery) {
+      // 如果不是"尽最大努力恢复"，则会要求 CURRENT 文件一定要存在
       s = env_->FileExists(current_fname);
-    } else {
+    }
+    else {
       s = Status::NotFound();
       IOOptions io_opts;
       io_opts.do_not_recurse = true;
@@ -455,6 +463,7 @@ Status DBImpl::Recover(
       }
     }
     if (s.IsNotFound()) {
+      // 不存在则创建
       if (immutable_db_options_.create_if_missing) {
         s = NewDB(&files_in_dbname);
         is_new_db = true;
@@ -462,6 +471,7 @@ Status DBImpl::Recover(
           return s;
         }
       } else {
+        // 直接报错
         return Status::InvalidArgument(
             current_fname, "does not exist (create_if_missing is false)");
       }
@@ -515,6 +525,7 @@ Status DBImpl::Recover(
   assert(db_id_.empty());
   Status s;
   bool missing_table_file = false;
+  // 执行 Version 的恢复动作
   if (!immutable_db_options_.best_efforts_recovery) {
     s = versions_->Recover(column_families, read_only, &db_id_);
   } else {
@@ -1760,11 +1771,15 @@ Status DBImpl::WriteLevel0TableForRecovery(int job_id, ColumnFamilyData* cfd,
 }
 
 Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
+  // DB 的配置和 CF 的配置是独立的，Options 同时继承了这俩类
   DBOptions db_options(options);
   ColumnFamilyOptions cf_options(options);
+
   std::vector<ColumnFamilyDescriptor> column_families;
+  // 会自动将默认的 CF 进行创建
   column_families.push_back(
       ColumnFamilyDescriptor(kDefaultColumnFamilyName, cf_options));
+  // 如果要持久化 CF 的数据，会创建一个默认的 CF(___rocksdb_stats_history___) 来存储
   if (db_options.persist_stats_to_disk) {
     column_families.push_back(
         ColumnFamilyDescriptor(kPersistentStatsColumnFamilyName, cf_options));
@@ -1787,6 +1802,13 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
   return s;
 }
 
+
+// 源码学习资料：https://blog.csdn.net/xuhaitao23/article/details/121747616
+// db_options: 配置/选项
+// dbname: 数据库名称
+// column_families: 要打开的column family
+// handles: 打开的column family
+// dbptr: 打开的数据库
 Status DB::Open(const DBOptions& db_options, const std::string& dbname,
                 const std::vector<ColumnFamilyDescriptor>& column_families,
                 std::vector<ColumnFamilyHandle*>* handles, DB** dbptr) {
@@ -1794,6 +1816,7 @@ Status DB::Open(const DBOptions& db_options, const std::string& dbname,
   const bool kBatchPerTxn = true;
   ThreadStatusUtil::SetEnableTracking(db_options.enable_thread_tracking);
   ThreadStatusUtil::SetThreadOperation(ThreadStatus::OperationType::OP_DBOPEN);
+  // 实际上创建 RocksDB 的逻辑
   Status s = DBImpl::Open(db_options, dbname, column_families, handles, dbptr,
                           !kSeqPerBatch, kBatchPerTxn);
   ThreadStatusUtil::ResetThreadStatus();
@@ -1912,10 +1935,13 @@ IOStatus DBImpl::CreateWAL(uint64_t log_file_num, uint64_t recycle_log_number,
   return io_s;
 }
 
+// 源码学习资料：https://blog.csdn.net/xuhaitao23/article/details/121747616
 Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
                     const std::vector<ColumnFamilyDescriptor>& column_families,
                     std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                     const bool seq_per_batch, const bool batch_per_txn) {
+  // 检查配置参数是否合理
+  // TODO 待整理
   Status s = ValidateOptionsByTable(db_options, column_families);
   if (!s.ok()) {
     return s;
@@ -1930,12 +1956,14 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   assert(handles);
   handles->clear();
 
+  // 选择所有 CF 设置的最大的 max_write_buffer_size 作为最终的值
   size_t max_write_buffer_size = 0;
   for (auto cf : column_families) {
     max_write_buffer_size =
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }
 
+  // 创建 DBImpl 实例
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
   if (!impl->immutable_db_options_.info_log) {
     s = impl->init_logger_creation_s_;
@@ -1944,6 +1972,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   } else {
     assert(impl->init_logger_creation_s_.ok());
   }
+
+  // 创建各个目录
   s = impl->env_->CreateDirIfMissing(impl->immutable_db_options_.GetWalDir());
   if (s.ok()) {
     std::vector<std::string> paths;
@@ -1982,11 +2012,14 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
 
   // Handles create_if_missing, error_if_exists
   uint64_t recovered_seq(kMaxSequenceNumber);
+
+  // 恢复历史状态，即从 WAL 中恢复数据（如果有需要的话）
   s = impl->Recover(column_families, false /* read_only */,
                     false /* error_if_wal_file_exists */,
                     false /* error_if_data_exists_in_wals */, &recovered_seq,
                     &recovery_ctx);
   if (s.ok()) {
+    // 创建一个新的wal(CreateWAL)
     uint64_t new_log_number = impl->versions_->NewFileNumber();
     log::Writer* new_log = nullptr;
     const size_t preallocate_block_size =
@@ -2045,6 +2078,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     s = impl->InitPersistStatsColumnFamily();
   }
 
+  // 初始化 CF
   if (s.ok()) {
     // set column family handles
     for (auto cf : column_families) {
@@ -2074,6 +2108,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     }
   }
 
+  // 初始化 InstallSuperVersionAndScheduleWork
   if (s.ok()) {
     SuperVersionContext sv_context(/* create_superversion */ true);
     for (auto cfd : *impl->versions_->GetColumnFamilySet()) {
@@ -2088,6 +2123,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     s = impl->PersistentStatsProcessFormatVersion();
   }
 
+  // 检查是否能够使用FIFO(compaction策略是FIFO时)，是否支持merge
   if (s.ok()) {
     for (auto cfd : *impl->versions_->GetColumnFamilySet()) {
       if (!cfd->mem()->IsSnapshotSupported()) {
@@ -2110,6 +2146,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   if (s.ok()) {
     // Persist RocksDB Options before scheduling the compaction.
     // The WriteOptionsFile() will release and lock the mutex internally.
+    // 持久化存储 RocksDB 的参数配置
     persist_options_status = impl->WriteOptionsFile(
         false /*need_mutex_lock*/, false /*need_enter_write_thread*/);
 
@@ -2123,6 +2160,7 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
   impl->mutex_.Unlock();
 
+  // 初始化 SSTFileManager
   auto sfm = static_cast<SstFileManagerImpl*>(
       impl->immutable_db_options_.sst_file_manager.get());
   if (s.ok() && sfm) {
