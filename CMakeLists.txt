@@ -1521,6 +1521,12 @@ if(WITH_TESTS)
   endif()
 endif()
 
+# 搜索指定目录下源文件
+#file(GLOB SRC_LIST ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
+add_executable(myTest "main.cpp")
+target_link_libraries(myTest ${ROCKSDB_STATIC_LIB})
+
+
 if(WITH_BENCHMARK_TOOLS)
   add_executable(db_bench${ARTIFACT_SUFFIX}
     tools/simulated_hybrid_file_system.cc
