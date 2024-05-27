@@ -6,7 +6,6 @@
 //
 #ifndef ROCKSDB_LITE
 #ifdef USE_AWS
-#include <mutex>
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
 #include <aws/core/utils/crypto/CryptoStream.h>
@@ -35,6 +34,8 @@
 #include <aws/s3-crt/model/PutObjectResult.h>
 #include <aws/s3-crt/model/ServerSideEncryption.h>
 #include <aws/transfer/TransferManager.h>
+
+#include <mutex>
 #endif  // USE_AWS
 
 #include <cassert>
@@ -130,15 +131,16 @@ class AwsS3ClientWrapper {
     // TODO(wangshaoyi): transfermanager is incompatible with s3crtclient
     // temporarily commented out for compiling
     if (cloud_options.use_aws_transfer_manager) {
-//      Aws::Transfer::TransferManagerConfiguration transferManagerConfig(
-//          GetAwsTransferManagerExecutor());
-//      transferManagerConfig.s3Client = client_;
-//      SetEncryptionParameters(cloud_options,
-//                              transferManagerConfig.putObjectTemplate);
-//      SetEncryptionParameters(
-//          cloud_options, transferManagerConfig.createMultipartUploadTemplate);
-//      transfer_manager_ =
-//          Aws::Transfer::TransferManager::Create(transferManagerConfig);
+      //      Aws::Transfer::TransferManagerConfiguration transferManagerConfig(
+      //          GetAwsTransferManagerExecutor());
+      //      transferManagerConfig.s3Client = client_;
+      //      SetEncryptionParameters(cloud_options,
+      //                              transferManagerConfig.putObjectTemplate);
+      //      SetEncryptionParameters(
+      //          cloud_options,
+      //          transferManagerConfig.createMultipartUploadTemplate);
+      //      transfer_manager_ =
+      //          Aws::Transfer::TransferManager::Create(transferManagerConfig);
     }
   }
 
@@ -215,7 +217,8 @@ class AwsS3ClientWrapper {
   }
 
   Aws::S3Crt::Model::PutObjectOutcome PutCloudObject(
-      const Aws::S3Crt::Model::PutObjectRequest& request, uint64_t size_hint = 0) {
+      const Aws::S3Crt::Model::PutObjectRequest& request,
+      uint64_t size_hint = 0) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kWriteOp, size_hint);
     auto outcome = client_->PutObject(request);
@@ -328,8 +331,7 @@ class S3ReadableFile : public CloudStorageReadableFileImpl {
         s3client_->GetCloudObject(request);
     bool isSuccess = outcome.IsSuccess();
     if (!isSuccess) {
-      const Aws::S3Crt::S3CrtError& error =
-          outcome.GetError();
+      const Aws::S3Crt::S3CrtError& error = outcome.GetError();
       std::string errmsg(error.GetMessage().c_str(), error.GetMessage().size());
       if (IsNotFound(error.GetErrorType()) ||
           errmsg.find("Response code: 404") != std::string::npos) {
@@ -457,7 +459,7 @@ class S3StorageProvider : public CloudStorageProviderImpl {
 };
 
 Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
-  std::call_once(flag1, [](){Aws::InitAPI(Aws::SDKOptions());}); 
+  std::call_once(flag1, []() { Aws::InitAPI(Aws::SDKOptions()); });
   auto cfs = dynamic_cast<CloudFileSystem*>(options.env->GetFileSystem().get());
   assert(cfs);
   const auto& cloud_opts = cfs->GetCloudFileSystemOptions();
@@ -479,7 +481,7 @@ Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
     }
   }
   Aws::S3Crt::ClientConfiguration config;
-  
+
   Status status = AwsCloudOptions::GetClientConfiguration(
       cfs, cloud_opts.src_bucket.GetRegion(), &config);
   if (status.ok()) {
@@ -524,7 +526,8 @@ IOStatus S3StorageProvider::CreateBucket(const std::string& bucket) {
   // a Region to optimize latency, minimize costs, or address regulatory
   // requirements.
   //
-  if ((bucket_location != Aws::S3Crt::Model::BucketLocationConstraint::NOT_SET) &&
+  if ((bucket_location !=
+       Aws::S3Crt::Model::BucketLocationConstraint::NOT_SET) &&
       (bucket_location !=
        Aws::S3Crt::Model::BucketLocationConstraint::us_east_1)) {
     conf.SetLocationConstraint(bucket_location);
@@ -648,8 +651,7 @@ IOStatus S3StorageProvider::ListCloudObjects(const std::string& bucket_name,
         s3client_->ListCloudObjects(request);
     bool isSuccess = outcome.IsSuccess();
     if (!isSuccess) {
-      const Aws::S3Crt::S3CrtError& error =
-          outcome.GetError();
+      const Aws::S3Crt::S3CrtError& error = outcome.GetError();
       std::string errmsg(error.GetMessage().c_str());
       if (IsNotFound(error.GetErrorType())) {
         Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
@@ -1078,4 +1080,3 @@ Status CloudStorageProviderImpl::CreateS3Provider(
 }
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // ROCKSDB_LITE
-
