@@ -151,6 +151,7 @@ Status AwsCloudOptions::GetClientConfiguration(
   if (cloud_fs_options.endpoint_override != "") {
     config->endpointOverride = cloud_fs_options.endpoint_override;
   }
+  config->useVirtualAddressing = false;
 
   config->region = ToAwsString(region);
   return Status::OK();
