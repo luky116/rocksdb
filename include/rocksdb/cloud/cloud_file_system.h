@@ -578,6 +578,10 @@ class CloudFileSystem : public FileSystem {
   virtual IOStatus DeleteCloudObject(const std::string& bucket,
                                      const std::string& objectpath) = 0;
 
+  // helper methods to access the file cache
+  virtual void FileCacheAccess(const std::string& fname) {}
+  virtual void FileCacheInsert(const std::string& fname, uint64_t filesize) {}
+
   Logger* GetLogger() const { return info_log_.get(); }
   const std::shared_ptr<CloudStorageProvider>&  GetStorageProvider() const {
     return cloud_fs_options.storage_provider;
