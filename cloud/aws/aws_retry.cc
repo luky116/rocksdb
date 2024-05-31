@@ -9,9 +9,9 @@
 #ifdef USE_AWS
 #include <aws/core/client/AWSError.h>
 #include <aws/core/client/ClientConfiguration.h>
-#include <aws/s3-crt/ClientConfiguration.h>
-#include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
 #include <aws/core/client/RetryStrategy.h>
+#include <aws/core/client/SpecifiedRetryableErrorsRetryStrategy.h>
+#include <aws/s3-crt/ClientConfiguration.h>
 #endif  // USE_AWS
 
 namespace ROCKSDB_NAMESPACE {

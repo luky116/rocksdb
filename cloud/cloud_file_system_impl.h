@@ -3,6 +3,7 @@
 #pragma once
 #include <atomic>
 #include <condition_variable>
+#include <future>
 #include <mutex>
 #include <thread>
 
@@ -267,10 +268,9 @@ class CloudFileSystemImpl : public CloudFileSystem {
   IOStatus GetMaxFileNumberFromCurrentManifest(
       const std::string& local_dbname,
       uint64_t* max_file_number) override;
-  
+
   IOStatus GetMaxManifestSequenceFromCurrentManifest(
-      const std::string& local_dbname,
-      uint64_t* max_manifest_seq) override;
+      const std::string& local_dbname, uint64_t* max_manifest_seq) override;
 
   // Upload MANIFEST-epoch  to the cloud
   IOStatus UploadManifest(const std::string& local_dbname,
@@ -379,6 +379,8 @@ class CloudFileSystemImpl : public CloudFileSystem {
   void StopPurger();
 
  private:
+  bool WaitPendingObjects();
+
   // Delete all local files that are invisible
   IOStatus DeleteLocalInvisibleFiles(
       const std::string& dbname,
@@ -411,6 +413,8 @@ class CloudFileSystemImpl : public CloudFileSystem {
   // scratch space in local dir
   static constexpr const char* SCRATCH_LOCAL_DIR = "/tmp";
   std::shared_ptr<CloudFileDeletionScheduler> cloud_file_deletion_scheduler_;
+
+  thread_local static std::vector<std::future<bool>> pending_objects_;
 };
 
 }  // namespace ROCKSDB_NAMESPACE
