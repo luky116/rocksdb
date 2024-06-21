@@ -78,6 +78,13 @@ IOStatus CloudFileSystemImpl::GetCloudObject(const std::string& fname) {
   return st;
 }
 
+IOStatus CloudFileSystemImpl::GetCloudObjectAsync(
+    const std::string& fname, std::shared_ptr<std::promise<bool>> prom_ptr) {
+  auto st = GetStorageProvider()->GetCloudObjectAsync(
+      GetDestBucketName(), destname(fname), fname, prom_ptr);
+  return st;
+}
+
 IOStatus CloudFileSystemImpl::GetCloudObjectSize(const std::string& fname,
                                                  uint64_t* remote_size) {
   auto st = IOStatus::NotFound();
@@ -132,6 +139,33 @@ IOStatus CloudFileSystemImpl::ListCloudObjects(
     }
   }
   return st;
+}
+
+IOStatus CloudFileSystemImpl::DownloadAsync(const std::string& logical_fname,
+    std::shared_ptr<std::promise<bool>> prom_ptr) {
+  IOOptions io_opts;
+  auto fname = RemapFilename(logical_fname);
+  auto file_type = GetFileType(fname);
+  IOStatus st;
+  assert(file_type == RocksDBFileType::kSstFile);
+  if (cloud_fs_options.hasSstFileCache()) {
+    st = base_fs_->FileExists(fname, io_opts, nullptr);
+    if (st.ok()) {
+      FileCacheAccess(fname);
+      prom_ptr->set_value(true);
+      return st;
+    }
+  }
+
+  st = GetCloudObjectAsync(fname, prom_ptr);
+  if (st.ok() && cloud_fs_options.hasSstFileCache()) {
+    uint64_t local_size;
+    auto statx = base_fs_->GetFileSize(fname, io_opts, &local_size, nullptr);
+    if (statx.ok()) {
+      FileCacheInsert(fname, local_size);
+    }
+  }
+  return IOStatus::OK();
 }
 
 IOStatus CloudFileSystemImpl::NewCloudReadableFile(

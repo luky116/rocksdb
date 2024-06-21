@@ -128,6 +128,11 @@ class CloudStorageProviderImpl : public CloudStorageProvider {
   IOStatus PutCloudObject(const std::string& local_file,
                           const std::string& bucket_name,
                           const std::string& object_path) override;
+
+  IOStatus CloudStorageProviderImpl::GetCloudObjectAsync(
+      const std::string& bucket_name, const std::string& object_path,
+      const std::string& local_path, std::shared_ptr<std::promise<bool>> prom_ptr) override;
+
   IOStatus NewCloudReadableFile(
       const std::string& bucket, const std::string& fname,
       const FileOptions& options,

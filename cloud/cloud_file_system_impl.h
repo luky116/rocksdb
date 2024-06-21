@@ -59,6 +59,9 @@ class CloudFileSystemImpl : public CloudFileSystem {
                            std::unique_ptr<FSWritableFile>* result,
                            IODebugContext* dbg) override;
 
+  IOStatus DownloadAsync(const std::string& fname,
+                         std::shared_ptr<std::promise<bool>> prom_ptr) override;
+
   IOStatus ReopenWritableFile(const std::string& fname,
                               const FileOptions& options,
                               std::unique_ptr<FSWritableFile>* result,
@@ -155,7 +158,7 @@ class CloudFileSystemImpl : public CloudFileSystem {
 
   // Find all live files based on cloud_manifest_ and local MANIFEST FILE
   // If local MANIFEST file doesn't exist, it will pull from cloud
-  // 
+  //
   // REQUIRES: cloud_manifest_ is loaded
   // REQUIRES: cloud_manifest_ is not updated when calling this function
   IOStatus FindAllLiveFiles(const std::string& local_dbname,
@@ -380,6 +383,8 @@ class CloudFileSystemImpl : public CloudFileSystem {
 
  private:
   bool WaitPendingObjects() override;
+
+  IOStatus GetCloudObjectAsync(const std::string& fname, std::shared_ptr<std::promise<bool>> prom_ptr);
 
   // Delete all local files that are invisible
   IOStatus DeleteLocalInvisibleFiles(

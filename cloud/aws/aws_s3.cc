@@ -201,6 +201,12 @@ class AwsS3ClientWrapper {
     return outcome;
   }
 
+  void GetCloudObjectAsync(
+      const Aws::S3Crt::Model::GetObjectRequest& request,
+      const Aws::S3Crt::GetObjectResponseReceivedHandler& handler) {
+    client_->GetObjectAsync(request, handler, nullptr);
+  }
+
   template <class... Args>
   std::shared_ptr<Aws::Transfer::TransferHandle> DownloadFile(Args... args) {
     CloudRequestCallbackGuard guard(cloud_request_callback_.get(),
@@ -434,6 +440,12 @@ class S3StorageProvider : public CloudStorageProviderImpl {
       IODebugContext* dbg) override;
   Status PrepareOptions(const ConfigOptions& options) override;
  protected:
+
+  IOStatus DoGetCloudObjectAsync(const std::string& bucket_name,
+                                 const std::string& object_path,
+                                 const std::string& destination,
+                                 aws::S3Crt::Model::awsGetObjectResponseReceivedHandler handler) override;
+
   IOStatus DoGetCloudObject(const std::string& bucket_name,
                             const std::string& object_path,
                             const std::string& destination,
@@ -714,7 +726,7 @@ IOStatus S3StorageProvider::ExistsCloudObject(const std::string& bucket_name,
 IOStatus S3StorageProvider::GetCloudObjectSize(const std::string& bucket_name,
                                                const std::string& object_path,
                                                uint64_t* filesize) {
-  HeadObjectResult result;                                             
+  HeadObjectResult result;
   result.size = filesize;
   return HeadObject(bucket_name, object_path, &result);
 }
@@ -934,6 +946,66 @@ class IOStreamWithOwnedBuf : public std::iostream {
 };
 
 }  // namespace
+
+
+IOStatus S3StorageProvider::DoGetCloudObjectAsync(
+    const std::string& bucket_name, const std::string& object_path,
+    const std::string& destination,
+    std::shared_ptr<std::promise<bool>> prom_ptr) {
+  std::string tmp_destination =
+      local_path + ".tmp-" + std::to_string(rng_.Next());
+
+  IOStatus fileCloseStatus;
+
+  auto ioStreamFactory = [=, &fileCloseStatus]() -> Aws::IOStream* {
+    FileOptions foptions;
+    foptions.use_direct_writes =
+        cfs_->GetCloudFileSystemOptions().use_direct_io_for_cloud_download;
+    std::unique_ptr<FSWritableFile> file;
+    auto st = NewWritableFile(cfs_->GetBaseFileSystem().get(), destination,
+                              &file, foptions);
+    if (!st.ok()) {
+      // fallback to FStream
+      return Aws::New<Aws::FStream>(
+          Aws::Utils::ARRAY_ALLOCATION_TAG, destination,
+          std::ios_base::out | std::ios_base::trunc);
+    }
+    return Aws::New<IOStreamWithOwnedBuf<WritableFileStreamBuf>>(
+        Aws::Utils::ARRAY_ALLOCATION_TAG,
+        std::unique_ptr<WritableFileStreamBuf>(new WritableFileStreamBuf(
+            &fileCloseStatus,
+            std::unique_ptr<WritableFileWriter>(new WritableFileWriter(
+                    std::move(file), destination, foptions)))));
+  };
+
+  Aws::S3Crt::Model::GetObjectRequest request;
+  request.SetBucket(ToAwsString(bucket_name));
+  request.SetKey(ToAwsString(object_path));
+  request.SetResponseStreamFactory(std::move(ioStreamFactory));
+
+  auto handler = aws::S3Crt::Model::awsGetObjectResponseReceivedHandler{
+      [this, tmp_destination, local_destination, &fileCloseStatus] (
+      const S3CrtClient*, const GetObjectRequest&, GetObjectOutcome outcome,
+      const std::shared_ptr<const Aws::Client::AsyncCallerContext> &) {
+
+    const auto& local_fs = cfs_->GetBaseFileSystem();
+    const IOOptions io_opts;
+    IODebugContext* dbg = nullptr;
+    auto remote_size = outcome.GetResult().GetContentLength();
+    uint64_t local_size{0};
+    auto s = local_fs->GetFileSize(tmp_destination, io_opts, &local_size, dbg);
+    if (!outcome.IsSuccess() || !s.ok() ||
+        local_size != remote_size || !fileCloseStatus.ok()) {
+      local_fs->DeleteFile(tmp_destination, io_opts, dbg);
+      prom_ptr->set_value(false);
+      return;
+    }
+    local_fs->RenameFile(tmp_destination, local_destination, io_opts, dbg);
+  }};
+
+  s3client_->GetCloudObjectAsync(request, handler);
+
+}
 
 IOStatus S3StorageProvider::DoGetCloudObject(const std::string& bucket_name,
                                              const std::string& object_path,

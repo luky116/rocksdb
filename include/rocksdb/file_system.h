@@ -27,6 +27,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <future>
 
 #include "rocksdb/customizable.h"
 #include "rocksdb/env.h"
@@ -368,6 +369,11 @@ class FileSystem : public Customizable {
                                    const FileOptions& file_opts,
                                    std::unique_ptr<FSWritableFile>* result,
                                    IODebugContext* dbg) = 0;
+
+  virtual IOStatus DownloadAsync(const std::string& fname, std::shared_ptr<std::promise<bool>> prom_ptr) {
+    prom_ptr->set_value(true);
+    return IOStatus::OK();
+  }
 
   // Create an object that writes to a file with the specified name.
   // `FSWritableFile::Append()`s will append after any existing content.  If the
