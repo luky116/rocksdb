@@ -821,6 +821,8 @@ IOStatus CloudFileSystemImpl::CopyLocalFileToDest(
   // upload sst
   std::shared_ptr<std::promise<bool>> prom =
       std::make_shared<std::promise<bool>>();
+  Log(InfoLogLevel::INFO_LEVEL, info_log_,
+      "uploading %s", local_name.c_str());
   pending_objects_.emplace_back(prom->get_future());
   return GetStorageProvider()->PutCloudObjectAsync(
       local_name, GetDestBucketName(), dest_name, prom);
@@ -2445,6 +2447,8 @@ IOStatus CloudFileSystemImpl::FindAllLiveFiles(
 
 bool CloudFileSystemImpl::WaitPendingObjects() {
   bool ret = true;
+
+  Log(InfoLogLevel::ERROR_LEVEL, info_log_, "pending objects num: %d", int(pending_objects_.size()));
   for (auto i = 0; i < pending_objects_.size(); i++) {
     bool success = pending_objects_[i].get();
     if (!success) {

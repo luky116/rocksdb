@@ -379,7 +379,7 @@ class CloudFileSystemImpl : public CloudFileSystem {
   void StopPurger();
 
  private:
-  bool WaitPendingObjects();
+  bool WaitPendingObjects() override;
 
   // Delete all local files that are invisible
   IOStatus DeleteLocalInvisibleFiles(

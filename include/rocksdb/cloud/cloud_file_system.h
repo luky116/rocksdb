@@ -567,6 +567,7 @@ class CloudFileSystem : public FileSystem {
   const std::shared_ptr<FileSystem>& GetBaseFileSystem() const {
     return base_fs_;
   }
+  virtual bool WaitPendingObjects() { return true; }
   virtual IOStatus PreloadCloudManifest(const std::string& local_dbname) = 0;
   // This method will migrate the database that is using pure RocksDB into
   // RocksDB-Cloud. Call this before opening the database with RocksDB-Cloud.
