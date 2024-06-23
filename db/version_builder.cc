@@ -10,6 +10,7 @@
 #include "db/version_builder.h"
 
 #include <algorithm>
+#include <future>
 #include <atomic>
 #include <cinttypes>
 #include <functional>
@@ -1245,12 +1246,15 @@ class VersionBuilder::Rep {
     // <file metadata, level>
     std::vector<std::pair<FileMetaData*, int>> files_meta;
     std::vector<Status> statuses;
+    std::vector<std::future<bool>> pending_downloads;
     for (int level = 0; level < num_levels_; level++) {
       for (auto& file_meta_pair : levels_[level].added_files) {
         auto* file_meta = file_meta_pair.second;
         // If the file has been opened before, just skip it.
         if (!file_meta->table_reader_handle) {
+          std::shared_ptr<std::promise<bool>> prom_ptr = std::make_shared<std::promise<bool>>();
           files_meta.emplace_back(file_meta, level);
+          pending_downloads.emplace_back(prom_ptr->get_future())
           statuses.emplace_back(Status::OK());
         }
         if (files_meta.size() >= max_load) {
@@ -1260,6 +1264,10 @@ class VersionBuilder::Rep {
       if (files_meta.size() >= max_load) {
         break;
       }
+    }
+
+    for (auto& fut : pending_downloads) {
+      fut.get();
     }
 
     std::atomic<size_t> next_file_meta_idx(0);
