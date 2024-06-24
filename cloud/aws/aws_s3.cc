@@ -955,9 +955,9 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
   std::string tmp_destination =
       local_path + ".tmp-" + std::to_string(rng_.Next());
 
-  IOStatus fileCloseStatus;
+  std::shared_ptr<IOStatus> fileCloseStatus = std::make_shared<IOStatus>();
 
-  auto ioStreamFactory = [=, &fileCloseStatus]() -> Aws::IOStream* {
+  auto ioStreamFactory = [=]() -> Aws::IOStream* {
     FileOptions foptions;
     foptions.use_direct_writes =
         cfs_->GetCloudFileSystemOptions().use_direct_io_for_cloud_download;
@@ -973,7 +973,7 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
     return Aws::New<IOStreamWithOwnedBuf<WritableFileStreamBuf>>(
         Aws::Utils::ARRAY_ALLOCATION_TAG,
         std::unique_ptr<WritableFileStreamBuf>(new WritableFileStreamBuf(
-            &fileCloseStatus,
+            fileCloseStatus.get(),
             std::unique_ptr<WritableFileWriter>(new WritableFileWriter(
                     std::move(file), tmp_destination, foptions)))));
   };
@@ -984,10 +984,11 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
   request.SetResponseStreamFactory(std::move(ioStreamFactory));
 
   auto handler = Aws::S3Crt::GetObjectResponseReceivedHandler{
-      [this, tmp_destination, local_path, &fileCloseStatus, prom_ptr] (
+      [this, tmp_destination, local_path, fileCloseStatus, prom_ptr] (
       const Aws::S3Crt::S3CrtClient*, const Aws::S3Crt::Model::GetObjectRequest&, Aws::S3Crt::Model::GetObjectOutcome outcome,
       const std::shared_ptr<const Aws::Client::AsyncCallerContext> &) {
 
+    Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(), "this is asyncgetobject handler, outcome: %d", outcome.IsSuccess());
     const auto& local_fs = cfs_->GetBaseFileSystem();
     const IOOptions io_opts;
     IODebugContext* dbg = nullptr;
@@ -995,16 +996,17 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
     uint64_t local_size{0};
     auto s = local_fs->GetFileSize(tmp_destination, io_opts, &local_size, dbg);
     if (!outcome.IsSuccess() || !s.ok() ||
-        local_size != uint64_t(remote_size) || !fileCloseStatus.ok()) {
+        local_size != uint64_t(remote_size) || !fileCloseStatus->ok()) {
       local_fs->DeleteFile(tmp_destination, io_opts, dbg);
       prom_ptr->set_value(false);
       return;
     }
     local_fs->RenameFile(tmp_destination, local_path, io_opts, dbg);
+    cfs_->FileCacheInsert(local_path, local_size);
   }};
 
   s3client_->GetCloudObjectAsync(request, handler);
-
+  return IOStatus::OK();
 }
 
 IOStatus S3StorageProvider::DoGetCloudObject(const std::string& bucket_name,

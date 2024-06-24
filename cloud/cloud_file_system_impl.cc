@@ -148,6 +148,7 @@ IOStatus CloudFileSystemImpl::DownloadAsync(const std::string& logical_fname,
   auto file_type = GetFileType(fname);
   IOStatus st;
   assert(file_type == RocksDBFileType::kSstFile);
+  Log(InfoLogLevel::ERROR_LEVEL, info_log_, "logical_fname: %s, fname: %s", logical_fname.c_str(), fname.c_str());
   if (cloud_fs_options.hasSstFileCache()) {
     st = base_fs_->FileExists(fname, io_opts, nullptr);
     if (st.ok()) {
