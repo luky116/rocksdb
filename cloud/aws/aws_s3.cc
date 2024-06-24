@@ -998,11 +998,16 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
     if (!outcome.IsSuccess() || !s.ok() ||
         local_size != uint64_t(remote_size) || !fileCloseStatus->ok()) {
       local_fs->DeleteFile(tmp_destination, io_opts, dbg);
+      Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(), "outcome: %d, fileCloseStatus: %s, local_size: %llu, remote_size: %llu", 
+          outcome.IsSuccess(), fileCloseStatus->ToString().c_str(),
+          local_size,
+          uint64_t(remote_size));
       prom_ptr->set_value(false);
       return;
     }
     local_fs->RenameFile(tmp_destination, local_path, io_opts, dbg);
     cfs_->FileCacheInsert(local_path, local_size);
+    prom_ptr->set_value(true);
   }};
 
   s3client_->GetCloudObjectAsync(request, handler);
