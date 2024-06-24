@@ -6,35 +6,36 @@
 //
 #ifndef ROCKSDB_LITE
 #ifdef USE_AWS
-#include <mutex>
 #include <aws/core/Aws.h>
 #include <aws/core/utils/Outcome.h>
 #include <aws/core/utils/crypto/CryptoStream.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h>
-#include <aws/s3/S3Client.h>
-#include <aws/s3/S3Errors.h>
-#include <aws/s3/model/BucketLocationConstraint.h>
-#include <aws/s3/model/CopyObjectRequest.h>
-#include <aws/s3/model/CopyObjectResult.h>
-#include <aws/s3/model/CreateBucketConfiguration.h>
-#include <aws/s3/model/CreateBucketRequest.h>
-#include <aws/s3/model/CreateBucketResult.h>
-#include <aws/s3/model/DeleteBucketRequest.h>
-#include <aws/s3/model/DeleteObjectRequest.h>
-#include <aws/s3/model/DeleteObjectResult.h>
-#include <aws/s3/model/GetBucketVersioningRequest.h>
-#include <aws/s3/model/GetBucketVersioningResult.h>
-#include <aws/s3/model/GetObjectRequest.h>
-#include <aws/s3/model/GetObjectResult.h>
-#include <aws/s3/model/HeadBucketRequest.h>
-#include <aws/s3/model/HeadObjectRequest.h>
-#include <aws/s3/model/HeadObjectResult.h>
-#include <aws/s3/model/ListObjectsRequest.h>
-#include <aws/s3/model/ListObjectsResult.h>
-#include <aws/s3/model/PutObjectRequest.h>
-#include <aws/s3/model/PutObjectResult.h>
-#include <aws/s3/model/ServerSideEncryption.h>
+#include <aws/s3-crt/S3CrtClient.h>
+#include <aws/s3-crt/S3CrtErrors.h>
+#include <aws/s3-crt/model/BucketLocationConstraint.h>
+#include <aws/s3-crt/model/CopyObjectRequest.h>
+#include <aws/s3-crt/model/CopyObjectResult.h>
+#include <aws/s3-crt/model/CreateBucketConfiguration.h>
+#include <aws/s3-crt/model/CreateBucketRequest.h>
+#include <aws/s3-crt/model/CreateBucketResult.h>
+#include <aws/s3-crt/model/DeleteBucketRequest.h>
+#include <aws/s3-crt/model/DeleteObjectRequest.h>
+#include <aws/s3-crt/model/DeleteObjectResult.h>
+#include <aws/s3-crt/model/GetBucketVersioningRequest.h>
+#include <aws/s3-crt/model/GetBucketVersioningResult.h>
+#include <aws/s3-crt/model/GetObjectRequest.h>
+#include <aws/s3-crt/model/GetObjectResult.h>
+#include <aws/s3-crt/model/HeadBucketRequest.h>
+#include <aws/s3-crt/model/HeadObjectRequest.h>
+#include <aws/s3-crt/model/HeadObjectResult.h>
+#include <aws/s3-crt/model/ListObjectsRequest.h>
+#include <aws/s3-crt/model/ListObjectsResult.h>
+#include <aws/s3-crt/model/PutObjectRequest.h>
+#include <aws/s3-crt/model/PutObjectResult.h>
+#include <aws/s3-crt/model/ServerSideEncryption.h>
 #include <aws/transfer/TransferManager.h>
+
+#include <mutex>
 #endif  // USE_AWS
 
 #include <cassert>
@@ -99,10 +100,10 @@ void SetEncryptionParameters(const CloudFileSystemOptions& cloud_fs_options,
   if (cloud_fs_options.server_side_encryption) {
     if (cloud_fs_options.encryption_key_id.empty()) {
       put_request.SetServerSideEncryption(
-          Aws::S3::Model::ServerSideEncryption::AES256);
+          Aws::S3Crt::Model::ServerSideEncryption::AES256);
     } else {
       put_request.SetServerSideEncryption(
-          Aws::S3::Model::ServerSideEncryption::aws_kms);
+          Aws::S3Crt::Model::ServerSideEncryption::aws_kms);
       put_request.SetSSEKMSKeyId(cloud_fs_options.encryption_key_id.c_str());
     }
   }
@@ -114,34 +115,37 @@ class AwsS3ClientWrapper {
  public:
   AwsS3ClientWrapper(
       const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>& creds,
-      const Aws::Client::ClientConfiguration& config,
+      const Aws::S3Crt::ClientConfiguration& config,
       const CloudFileSystemOptions& cloud_options)
       : cloud_request_callback_(cloud_options.cloud_request_callback) {
     if (cloud_options.s3_client_factory) {
       client_ = cloud_options.s3_client_factory(creds, config);
     } else if (creds) {
-      client_ = std::make_shared<Aws::S3::S3Client>(
+      client_ = std::make_shared<Aws::S3Crt::S3CrtClient>(
           creds, config,
           Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
           false /* useVirtualAddressing */);
     } else {
-      client_ = std::make_shared<Aws::S3::S3Client>(config);
+      client_ = std::make_shared<Aws::S3Crt::S3CrtClient>(config);
     }
+    // TODO(wangshaoyi): transfermanager is incompatible with s3crtclient
+    // temporarily commented out for compiling
     if (cloud_options.use_aws_transfer_manager) {
-      Aws::Transfer::TransferManagerConfiguration transferManagerConfig(
-          GetAwsTransferManagerExecutor());
-      transferManagerConfig.s3Client = client_;
-      SetEncryptionParameters(cloud_options,
-                              transferManagerConfig.putObjectTemplate);
-      SetEncryptionParameters(
-          cloud_options, transferManagerConfig.createMultipartUploadTemplate);
-      transfer_manager_ =
-          Aws::Transfer::TransferManager::Create(transferManagerConfig);
+      //      Aws::Transfer::TransferManagerConfiguration transferManagerConfig(
+      //          GetAwsTransferManagerExecutor());
+      //      transferManagerConfig.s3Client = client_;
+      //      SetEncryptionParameters(cloud_options,
+      //                              transferManagerConfig.putObjectTemplate);
+      //      SetEncryptionParameters(
+      //          cloud_options,
+      //          transferManagerConfig.createMultipartUploadTemplate);
+      //      transfer_manager_ =
+      //          Aws::Transfer::TransferManager::Create(transferManagerConfig);
     }
   }
 
-  Aws::S3::Model::ListObjectsOutcome ListCloudObjects(
-      const Aws::S3::Model::ListObjectsRequest& request) {
+  Aws::S3Crt::Model::ListObjectsOutcome ListCloudObjects(
+      const Aws::S3Crt::Model::ListObjectsRequest& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kListOp);
     auto outcome = client_->ListObjects(request);
@@ -149,8 +153,8 @@ class AwsS3ClientWrapper {
     return outcome;
   }
 
-  Aws::S3::Model::CreateBucketOutcome CreateBucket(
-      const Aws::S3::Model::CreateBucketRequest& request) {
+  Aws::S3Crt::Model::CreateBucketOutcome CreateBucket(
+      const Aws::S3Crt::Model::CreateBucketRequest& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kCreateOp);
     auto outcome = client_->CreateBucket(request);
@@ -158,16 +162,16 @@ class AwsS3ClientWrapper {
     return outcome;
   }
 
-  Aws::S3::Model::HeadBucketOutcome HeadBucket(
-      const Aws::S3::Model::HeadBucketRequest& request) {
+  Aws::S3Crt::Model::HeadBucketOutcome HeadBucket(
+      const Aws::S3Crt::Model::HeadBucketRequest& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kInfoOp);
     auto outcome = client_->HeadBucket(request);
     t.SetSuccess(outcome.IsSuccess());
     return outcome;
   }
-  Aws::S3::Model::DeleteObjectOutcome DeleteCloudObject(
-      const Aws::S3::Model::DeleteObjectRequest& request) {
+  Aws::S3Crt::Model::DeleteObjectOutcome DeleteCloudObject(
+      const Aws::S3Crt::Model::DeleteObjectRequest& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kDeleteOp);
     auto outcome = client_->DeleteObject(request);
@@ -175,8 +179,8 @@ class AwsS3ClientWrapper {
     return outcome;
   }
 
-  Aws::S3::Model::CopyObjectOutcome CopyCloudObject(
-      const Aws::S3::Model::CopyObjectRequest& request) {
+  Aws::S3Crt::Model::CopyObjectOutcome CopyCloudObject(
+      const Aws::S3Crt::Model::CopyObjectRequest& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kCopyOp);
     auto outcome = client_->CopyObject(request);
@@ -184,8 +188,8 @@ class AwsS3ClientWrapper {
     return outcome;
   }
 
-  Aws::S3::Model::GetObjectOutcome GetCloudObject(
-      const Aws::S3::Model::GetObjectRequest& request) {
+  Aws::S3Crt::Model::GetObjectOutcome GetCloudObject(
+      const Aws::S3Crt::Model::GetObjectRequest& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kReadOp);
     auto outcome = client_->GetObject(request);
@@ -212,8 +216,9 @@ class AwsS3ClientWrapper {
     return handle;
   }
 
-  Aws::S3::Model::PutObjectOutcome PutCloudObject(
-      const Aws::S3::Model::PutObjectRequest& request, uint64_t size_hint = 0) {
+  Aws::S3Crt::Model::PutObjectOutcome PutCloudObject(
+      const Aws::S3Crt::Model::PutObjectRequest& request,
+      uint64_t size_hint = 0) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kWriteOp, size_hint);
     auto outcome = client_->PutObject(request);
@@ -237,8 +242,8 @@ class AwsS3ClientWrapper {
     return handle;
   }
 
-  Aws::S3::Model::HeadObjectOutcome HeadObject(
-      const Aws::S3::Model::HeadObjectRequest& request) {
+  Aws::S3Crt::Model::HeadObjectOutcome HeadObject(
+      const Aws::S3Crt::Model::HeadObjectRequest& request) {
     CloudRequestCallbackGuard t(cloud_request_callback_.get(),
                                 CloudRequestOpType::kInfoOp);
     auto outcome = client_->HeadObject(request);
@@ -256,10 +261,16 @@ class AwsS3ClientWrapper {
     return &executor;
   }
 
-  std::shared_ptr<Aws::S3::S3Client> client_;
+  std::shared_ptr<Aws::S3Crt::S3CrtClient> client_;
   std::shared_ptr<Aws::Transfer::TransferManager> transfer_manager_;
   std::shared_ptr<CloudRequestCallback> cloud_request_callback_;
 };
+
+static bool IsNotFound(const Aws::S3Crt::S3CrtErrors& s3err) {
+  return (s3err == Aws::S3Crt::S3CrtErrors::NO_SUCH_BUCKET ||
+          s3err == Aws::S3Crt::S3CrtErrors::NO_SUCH_KEY ||
+          s3err == Aws::S3Crt::S3CrtErrors::RESOURCE_NOT_FOUND);
+}
 
 static bool IsNotFound(const Aws::S3::S3Errors& s3err) {
   return (s3err == Aws::S3::S3Errors::NO_SUCH_BUCKET ||
@@ -311,17 +322,16 @@ class S3ReadableFile : public CloudStorageReadableFileImpl {
     Aws::String range(buffer);
 
     // set up S3 request to read this range
-    Aws::S3::Model::GetObjectRequest request;
+    Aws::S3Crt::Model::GetObjectRequest request;
     request.SetBucket(ToAwsString(bucket_));
     request.SetKey(ToAwsString(fname_));
     request.SetRange(range);
 
-    Aws::S3::Model::GetObjectOutcome outcome =
+    Aws::S3Crt::Model::GetObjectOutcome outcome =
         s3client_->GetCloudObject(request);
     bool isSuccess = outcome.IsSuccess();
     if (!isSuccess) {
-      const Aws::Client::AWSError<Aws::S3::S3Errors>& error =
-          outcome.GetError();
+      const Aws::S3Crt::S3CrtError& error = outcome.GetError();
       std::string errmsg(error.GetMessage().c_str(), error.GetMessage().size());
       if (IsNotFound(error.GetErrorType()) ||
           errmsg.find("Response code: 404") != std::string::npos) {
@@ -336,7 +346,7 @@ class S3ReadableFile : public CloudStorageReadableFileImpl {
       return IOStatus::IOError(fname_, errmsg.c_str());
     }
     std::stringstream ss;
-    // const Aws::S3::Model::GetObjectResult& res = outcome.GetResult();
+    // const Aws::S3Crt::Model::GetObjectResult& res = outcome.GetResult();
 
     // extract data payload
     Aws::IOStream& body = outcome.GetResult().GetBody();
@@ -441,7 +451,7 @@ class S3StorageProvider : public CloudStorageProviderImpl {
 
   // Retrieves metadata from an object based on a HeadObject request
   // REQUIRES: result != nullptr
-  IOStatus HeadObject(const Aws::S3::Model::HeadObjectRequest& request,
+  IOStatus HeadObject(const Aws::S3Crt::Model::HeadObjectRequest& request,
                       HeadObjectResult* result);
 
   // The S3 client
@@ -449,7 +459,7 @@ class S3StorageProvider : public CloudStorageProviderImpl {
 };
 
 Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
-  std::call_once(flag1, [](){Aws::InitAPI(Aws::SDKOptions());}); 
+  std::call_once(flag1, []() { Aws::InitAPI(Aws::SDKOptions()); });
   auto cfs = dynamic_cast<CloudFileSystem*>(options.env->GetFileSystem().get());
   assert(cfs);
   const auto& cloud_opts = cfs->GetCloudFileSystemOptions();
@@ -470,8 +480,8 @@ Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
       return Status::InvalidArgument("Two different regions not supported");
     }
   }
-  Aws::Client::ClientConfiguration config;
-  
+  Aws::S3Crt::ClientConfiguration config;
+
   Status status = AwsCloudOptions::GetClientConfiguration(
       cfs, cloud_opts.src_bucket.GetRegion(), &config);
   if (status.ok()) {
@@ -499,10 +509,10 @@ Status S3StorageProvider::PrepareOptions(const ConfigOptions& options) {
 //
 IOStatus S3StorageProvider::CreateBucket(const std::string& bucket) {
   // specify region for the bucket
-  Aws::S3::Model::CreateBucketConfiguration conf;
+  Aws::S3Crt::Model::CreateBucketConfiguration conf;
   // AWS's utility to help out with uploading and downloading S3 file
-  Aws::S3::Model::BucketLocationConstraint bucket_location =
-      Aws::S3::Model::BucketLocationConstraintMapper::
+  Aws::S3Crt::Model::BucketLocationConstraint bucket_location =
+      Aws::S3Crt::Model::BucketLocationConstraintMapper::
           GetBucketLocationConstraintForName(ToAwsString(
               cfs_->GetCloudFileSystemOptions().dest_bucket.GetRegion()));
   //
@@ -516,25 +526,26 @@ IOStatus S3StorageProvider::CreateBucket(const std::string& bucket) {
   // a Region to optimize latency, minimize costs, or address regulatory
   // requirements.
   //
-  if ((bucket_location != Aws::S3::Model::BucketLocationConstraint::NOT_SET) &&
+  if ((bucket_location !=
+       Aws::S3Crt::Model::BucketLocationConstraint::NOT_SET) &&
       (bucket_location !=
-       Aws::S3::Model::BucketLocationConstraint::us_east_1)) {
+       Aws::S3Crt::Model::BucketLocationConstraint::us_east_1)) {
     conf.SetLocationConstraint(bucket_location);
   }
 
   // create bucket
-  Aws::S3::Model::CreateBucketRequest request;
+  Aws::S3Crt::Model::CreateBucketRequest request;
   request.SetBucket(ToAwsString(bucket));
   request.SetCreateBucketConfiguration(conf);
-  Aws::S3::Model::CreateBucketOutcome outcome =
+  Aws::S3Crt::Model::CreateBucketOutcome outcome =
       s3client_->CreateBucket(request);
   bool isSuccess = outcome.IsSuccess();
   if (!isSuccess) {
-    const Aws::Client::AWSError<Aws::S3::S3Errors>& error = outcome.GetError();
+    const Aws::S3Crt::S3CrtError& error = outcome.GetError();
     std::string errmsg(error.GetMessage().c_str());
-    Aws::S3::S3Errors s3err = error.GetErrorType();
-    if (s3err != Aws::S3::S3Errors::BUCKET_ALREADY_EXISTS &&
-        s3err != Aws::S3::S3Errors::BUCKET_ALREADY_OWNED_BY_YOU) {
+    Aws::S3Crt::S3CrtErrors s3err = error.GetErrorType();
+    if (s3err != Aws::S3Crt::S3CrtErrors::BUCKET_ALREADY_EXISTS &&
+        s3err != Aws::S3Crt::S3CrtErrors::BUCKET_ALREADY_OWNED_BY_YOU) {
       return IOStatus::IOError(bucket.c_str(), errmsg.c_str());
     }
   }
@@ -542,9 +553,9 @@ IOStatus S3StorageProvider::CreateBucket(const std::string& bucket) {
 }
 
 IOStatus S3StorageProvider::ExistsBucket(const std::string& bucket) {
-  Aws::S3::Model::HeadBucketRequest request;
+  Aws::S3Crt::Model::HeadBucketRequest request;
   request.SetBucket(ToAwsString(bucket));
-  Aws::S3::Model::HeadBucketOutcome outcome = s3client_->HeadBucket(request);
+  Aws::S3Crt::Model::HeadBucketOutcome outcome = s3client_->HeadBucket(request);
   return outcome.IsSuccess() ? IOStatus::OK() : IOStatus::NotFound();
 }
 
@@ -585,16 +596,16 @@ IOStatus S3StorageProvider::DeleteCloudObject(const std::string& bucket_name,
   IOStatus st;
 
   // create request
-  Aws::S3::Model::DeleteObjectRequest request;
+  Aws::S3Crt::Model::DeleteObjectRequest request;
   request.SetBucket(ToAwsString(bucket_name));
   request.SetKey(ToAwsString(
       object_path));  // The filename is the object name in the bucket
 
-  Aws::S3::Model::DeleteObjectOutcome outcome =
+  Aws::S3Crt::Model::DeleteObjectOutcome outcome =
       s3client_->DeleteCloudObject(request);
   bool isSuccess = outcome.IsSuccess();
   if (!isSuccess) {
-    const Aws::Client::AWSError<Aws::S3::S3Errors>& error = outcome.GetError();
+    const Aws::S3Crt::S3CrtError& error = outcome.GetError();
     std::string errmsg(error.GetMessage().c_str());
     if (IsNotFound(error.GetErrorType())) {
       st = IOStatus::NotFound(object_path, errmsg.c_str());
@@ -628,7 +639,7 @@ IOStatus S3StorageProvider::ListCloudObjects(const std::string& bucket_name,
 
   // get info of bucket+object
   while (loop) {
-    Aws::S3::Model::ListObjectsRequest request;
+    Aws::S3Crt::Model::ListObjectsRequest request;
     request.SetBucket(ToAwsString(bucket_name));
     request.SetMaxKeys(cfs_->GetCloudFileSystemOptions()
                            .number_objects_listed_in_one_iteration);
@@ -636,12 +647,11 @@ IOStatus S3StorageProvider::ListCloudObjects(const std::string& bucket_name,
     request.SetPrefix(ToAwsString(prefix));
     request.SetMarker(marker);
 
-    Aws::S3::Model::ListObjectsOutcome outcome =
+    Aws::S3Crt::Model::ListObjectsOutcome outcome =
         s3client_->ListCloudObjects(request);
     bool isSuccess = outcome.IsSuccess();
     if (!isSuccess) {
-      const Aws::Client::AWSError<Aws::S3::S3Errors>& error =
-          outcome.GetError();
+      const Aws::S3Crt::S3CrtError& error = outcome.GetError();
       std::string errmsg(error.GetMessage().c_str());
       if (IsNotFound(error.GetErrorType())) {
         Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
@@ -651,8 +661,8 @@ IOStatus S3StorageProvider::ListCloudObjects(const std::string& bucket_name,
       }
       return IOStatus::IOError(object_path, errmsg.c_str());
     }
-    const Aws::S3::Model::ListObjectsResult& res = outcome.GetResult();
-    const Aws::Vector<Aws::S3::Model::Object>& objs = res.GetContents();
+    const Aws::S3Crt::Model::ListObjectsResult& res = outcome.GetResult();
+    const Aws::Vector<Aws::S3Crt::Model::Object>& objs = res.GetContents();
     for (const auto& o : objs) {
       const Aws::String& key = o.GetKey();
       // Our path should be a prefix of the fetched value
@@ -721,7 +731,7 @@ IOStatus S3StorageProvider::GetCloudObjectMetadata(
 IOStatus S3StorageProvider::PutCloudObjectMetadata(
     const std::string& bucket_name, const std::string& object_path,
     const std::unordered_map<std::string, std::string>& metadata) {
-  Aws::S3::Model::PutObjectRequest request;
+  Aws::S3Crt::Model::PutObjectRequest request;
   Aws::Map<Aws::String, Aws::String> aws_metadata;
   for (const auto& m : metadata) {
     aws_metadata[ToAwsString(m.first)] = ToAwsString(m.second);
@@ -767,14 +777,14 @@ IOStatus S3StorageProvider::NewCloudWritableFile(
 IOStatus S3StorageProvider::HeadObject(const std::string& bucket_name,
                                        const std::string& object_path,
                                        HeadObjectResult* result) {
-  Aws::S3::Model::HeadObjectRequest request;
+  Aws::S3Crt::Model::HeadObjectRequest request;
   request.SetBucket(ToAwsString(bucket_name));
   request.SetKey(ToAwsString(object_path));
   return HeadObject(request, result);
 }
 
 IOStatus S3StorageProvider::HeadObject(
-    const Aws::S3::Model::HeadObjectRequest& request,
+    const Aws::S3Crt::Model::HeadObjectRequest& request,
     HeadObjectResult* result) {
   assert(result != nullptr);
   auto outcome = s3client_->HeadObject(request);
@@ -819,21 +829,21 @@ IOStatus S3StorageProvider::CopyCloudObject(
   Aws::String src_object = ToAwsString(object_path_src);
   Aws::String dest_object = ToAwsString(object_path_dest);
 
-  Aws::String src_url = src_bucket + "/" + src_object;
+  Aws::String src_url = src_bucket + src_object;
 
   // create copy request
-  Aws::S3::Model::CopyObjectRequest request;
+  Aws::S3Crt::Model::CopyObjectRequest request;
   request.SetCopySource(src_url);
   request.SetBucket(dest_bucket);
   request.SetKey(dest_object);
   SetEncryptionParameters(cfs_->GetCloudFileSystemOptions(), request);
 
   // execute request
-  Aws::S3::Model::CopyObjectOutcome outcome =
+  Aws::S3Crt::Model::CopyObjectOutcome outcome =
       s3client_->CopyCloudObject(request);
   bool isSuccess = outcome.IsSuccess();
   if (!isSuccess) {
-    const Aws::Client::AWSError<Aws::S3::S3Errors>& error = outcome.GetError();
+    const Aws::S3Crt::S3CrtError& error = outcome.GetError();
     std::string errmsg(error.GetMessage().c_str());
     Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
         "[s3] S3WritableFile src path %s error in copying to %s %s",
@@ -976,7 +986,7 @@ IOStatus S3StorageProvider::DoGetCloudObject(const std::string& bucket_name,
                         std::move(file), destination, foptions)))));
       };
 
-      Aws::S3::Model::GetObjectRequest request;
+      Aws::S3Crt::Model::GetObjectRequest request;
       request.SetBucket(ToAwsString(bucket_name));
       request.SetKey(ToAwsString(object_path));
       request.SetResponseStreamFactory(std::move(ioStreamFactory));
@@ -1033,7 +1043,7 @@ IOStatus S3StorageProvider::DoPutCloudObject(const std::string& local_file,
         Aws::MakeShared<Aws::FStream>(object_path.c_str(), local_file.c_str(),
                                       std::ios_base::in | std::ios_base::out);
 
-    Aws::S3::Model::PutObjectRequest putRequest;
+    Aws::S3Crt::Model::PutObjectRequest putRequest;
     putRequest.SetBucket(ToAwsString(bucket_name));
     putRequest.SetKey(ToAwsString(object_path));
     putRequest.SetBody(inputData);

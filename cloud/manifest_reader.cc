@@ -237,7 +237,7 @@ IOStatus ManifestReader::GetMaxManifestSequenceFromManifest(
   reporter.status = &s;
   log::Reader reader(nullptr,
                      std::unique_ptr<SequentialFileReader>(
-                     new SequentialFileReader(std::move(file), fname)),
+                         new SequentialFileReader(std::move(file), fname)),
                      &reporter, true /*checksum*/, 0);
 
   Slice record;

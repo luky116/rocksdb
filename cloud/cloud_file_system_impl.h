@@ -267,10 +267,9 @@ class CloudFileSystemImpl : public CloudFileSystem {
   IOStatus GetMaxFileNumberFromCurrentManifest(
       const std::string& local_dbname,
       uint64_t* max_file_number) override;
-  
+
   IOStatus GetMaxManifestSequenceFromCurrentManifest(
-      const std::string& local_dbname,
-      uint64_t* max_manifest_seq) override;
+      const std::string& local_dbname, uint64_t* max_manifest_seq) override;
 
   // Upload MANIFEST-epoch  to the cloud
   IOStatus UploadManifest(const std::string& local_dbname,

@@ -20,6 +20,10 @@ class AWSCredentialsProvider;
 namespace Client {
 struct ClientConfiguration;
 }  // namespace Client
+namespace S3Crt {
+struct ClientConfiguration;
+class S3CrtClient;
+}  // namespace S3Crt
 namespace S3 {
 class S3Client;
 }
@@ -93,9 +97,9 @@ class AwsCloudAccessCredentials {
   std::shared_ptr<Aws::Auth::AWSCredentialsProvider> provider;
 };
 
-using S3ClientFactory = std::function<std::shared_ptr<Aws::S3::S3Client>(
+using S3ClientFactory = std::function<std::shared_ptr<Aws::S3Crt::S3CrtClient>(
     const std::shared_ptr<Aws::Auth::AWSCredentialsProvider>&,
-    const Aws::Client::ClientConfiguration&)>;
+    const Aws::S3Crt::ClientConfiguration&)>;
 
 // Defines parameters required to connect to Kafka
 class KafkaLogOptions {
@@ -175,6 +179,9 @@ inline bool operator!=(const BucketOptions& lhs, const BucketOptions& rhs) {
 
 class AwsCloudOptions {
  public:
+  static Status GetClientConfiguration(CloudFileSystem* fs,
+                                       const std::string& region,
+                                       Aws::S3Crt::ClientConfiguration* config);
   static Status GetClientConfiguration(
       CloudFileSystem* fs, const std::string& region,
       Aws::Client::ClientConfiguration* config);
@@ -304,8 +311,9 @@ class CloudFileSystemOptions {
   // user defined meta upload function
   // used to garantee only one server to update remote meta
   std::function<bool(const std::string& local_path,
-      const std::string& bucket_name,
-      const std::string& object_path)> upload_meta_func;
+                     const std::string& bucket_name,
+                     const std::string& object_path)>
+      upload_meta_func;
 
   // Experimental option!
   // This option only affects how resync_on_open works. If resync_on_open is true,
@@ -416,7 +424,6 @@ class CloudFileSystemOptions {
   // Default: 1 hour
   std::optional<std::chrono::seconds> cloud_file_deletion_delay;
 
-  
   // Override the http endpoint used to talk to a service.
   //
   // Default: ""
@@ -591,10 +598,8 @@ class CloudFileSystem : public FileSystem {
     return cloud_fs_options.cloud_log_controller;
   }
 
-  void SwitchMaster(bool is_master) {
-    cloud_fs_options.is_master = is_master;
-  }
-  
+  void SwitchMaster(bool is_master) { cloud_fs_options.is_master = is_master; }
+
   // The SrcBucketName identifies the cloud storage bucket and
   // GetSrcObjectPath specifies the path inside that bucket
   // where data files reside. The specified bucket is used in
@@ -677,11 +682,11 @@ class CloudFileSystem : public FileSystem {
 
   virtual IOStatus GetMaxFileNumberFromCurrentManifest(
       const std::string& local_dbname, uint64_t* max_file_number) = 0;
- 
-  virtual IOStatus GetMaxManifestSequenceFromCurrentManifest(
-      const std::string& , uint64_t* ) {
+
+  virtual IOStatus GetMaxManifestSequenceFromCurrentManifest(const std::string&,
+                                                             uint64_t*) {
     return IOStatus::NotSupported();
-  } 
+  }
 
   virtual IOStatus DeleteCloudInvisibleFiles(
       const std::vector<std::string>& active_cookies) = 0;
