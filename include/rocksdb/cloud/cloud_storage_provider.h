@@ -17,8 +17,6 @@ class Logger;
 struct ColumnFamilyOptions;
 struct DBOptions;
 
-using GetAsyncHandler = std::function<void(const Aws::S3Crt::Model::PutObjectOutcome&)>;
-
 class CloudStorageReadableFile : virtual public FSSequentialFile,
                                  virtual public FSRandomAccessFile {
  public:

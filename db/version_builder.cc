@@ -1254,7 +1254,7 @@ class VersionBuilder::Rep {
         if (!file_meta->table_reader_handle) {
           std::shared_ptr<std::promise<bool>> prom_ptr = std::make_shared<std::promise<bool>>();
           files_meta.emplace_back(file_meta, level);
-          pending_downloads.emplace_back(prom_ptr->get_future())
+          pending_downloads.emplace_back(prom_ptr->get_future());
           statuses.emplace_back(Status::OK());
         }
         if (files_meta.size() >= max_load) {

@@ -443,8 +443,8 @@ class S3StorageProvider : public CloudStorageProviderImpl {
 
   IOStatus DoGetCloudObjectAsync(const std::string& bucket_name,
                                  const std::string& object_path,
-                                 const std::string& destination,
-                                 aws::S3Crt::Model::awsGetObjectResponseReceivedHandler handler) override;
+                                 const std::string& local_path,
+                                 std::shared_ptr<std::promise<bool>> prom_ptr) override;
 
   IOStatus DoGetCloudObject(const std::string& bucket_name,
                             const std::string& object_path,
@@ -950,7 +950,7 @@ class IOStreamWithOwnedBuf : public std::iostream {
 
 IOStatus S3StorageProvider::DoGetCloudObjectAsync(
     const std::string& bucket_name, const std::string& object_path,
-    const std::string& destination,
+    const std::string& local_path,
     std::shared_ptr<std::promise<bool>> prom_ptr) {
   std::string tmp_destination =
       local_path + ".tmp-" + std::to_string(rng_.Next());
@@ -962,12 +962,12 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
     foptions.use_direct_writes =
         cfs_->GetCloudFileSystemOptions().use_direct_io_for_cloud_download;
     std::unique_ptr<FSWritableFile> file;
-    auto st = NewWritableFile(cfs_->GetBaseFileSystem().get(), destination,
+    auto st = NewWritableFile(cfs_->GetBaseFileSystem().get(), tmp_destination,
                               &file, foptions);
     if (!st.ok()) {
       // fallback to FStream
       return Aws::New<Aws::FStream>(
-          Aws::Utils::ARRAY_ALLOCATION_TAG, destination,
+          Aws::Utils::ARRAY_ALLOCATION_TAG, tmp_destination,
           std::ios_base::out | std::ios_base::trunc);
     }
     return Aws::New<IOStreamWithOwnedBuf<WritableFileStreamBuf>>(
@@ -975,7 +975,7 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
         std::unique_ptr<WritableFileStreamBuf>(new WritableFileStreamBuf(
             &fileCloseStatus,
             std::unique_ptr<WritableFileWriter>(new WritableFileWriter(
-                    std::move(file), destination, foptions)))));
+                    std::move(file), tmp_destination, foptions)))));
   };
 
   Aws::S3Crt::Model::GetObjectRequest request;
@@ -983,9 +983,9 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
   request.SetKey(ToAwsString(object_path));
   request.SetResponseStreamFactory(std::move(ioStreamFactory));
 
-  auto handler = aws::S3Crt::Model::awsGetObjectResponseReceivedHandler{
-      [this, tmp_destination, local_destination, &fileCloseStatus] (
-      const S3CrtClient*, const GetObjectRequest&, GetObjectOutcome outcome,
+  auto handler = Aws::S3Crt::GetObjectResponseReceivedHandler{
+      [this, tmp_destination, local_path, &fileCloseStatus, prom_ptr] (
+      const Aws::S3Crt::S3CrtClient*, const Aws::S3Crt::Model::GetObjectRequest&, Aws::S3Crt::Model::GetObjectOutcome outcome,
       const std::shared_ptr<const Aws::Client::AsyncCallerContext> &) {
 
     const auto& local_fs = cfs_->GetBaseFileSystem();
@@ -995,12 +995,12 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
     uint64_t local_size{0};
     auto s = local_fs->GetFileSize(tmp_destination, io_opts, &local_size, dbg);
     if (!outcome.IsSuccess() || !s.ok() ||
-        local_size != remote_size || !fileCloseStatus.ok()) {
+        local_size != uint64_t(remote_size) || !fileCloseStatus.ok()) {
       local_fs->DeleteFile(tmp_destination, io_opts, dbg);
       prom_ptr->set_value(false);
       return;
     }
-    local_fs->RenameFile(tmp_destination, local_destination, io_opts, dbg);
+    local_fs->RenameFile(tmp_destination, local_path, io_opts, dbg);
   }};
 
   s3client_->GetCloudObjectAsync(request, handler);
