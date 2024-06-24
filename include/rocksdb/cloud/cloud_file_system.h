@@ -429,6 +429,12 @@ class CloudFileSystemOptions {
   // Default: ""
   std::string endpoint_override;
 
+  // Throughput target in Gbps that we are trying to reach. Normally it's the
+  // NIC's throughput
+  //
+  // Default: 25.0 Gbps
+  double throughput_target_gbps = 25.0;
+
   CloudFileSystemOptions(
       CloudType _cloud_type = CloudType::kCloudAws,
       LogType _log_type = LogType::kLogKafka,
@@ -450,7 +456,8 @@ class CloudFileSystemOptions {
       bool _roll_cloud_manifest_on_open = true,
       std::string _cookie_on_open = "", std::string _new_cookie_on_open = "",
       bool _delete_cloud_invisible_files_on_open = true,
-      std::chrono::seconds _cloud_file_deletion_delay = std::chrono::hours(1))
+      std::chrono::seconds _cloud_file_deletion_delay = std::chrono::hours(1),
+      double _throughput_target_gbps = 25.0)
       : log_type(_log_type),
         sst_file_cache(_sst_file_cache),
         keep_local_sst_files(_keep_local_sst_files),
@@ -478,7 +485,8 @@ class CloudFileSystemOptions {
         new_cookie_on_open(_new_cookie_on_open),
         delete_cloud_invisible_files_on_open(
             _delete_cloud_invisible_files_on_open),
-        cloud_file_deletion_delay(_cloud_file_deletion_delay) {
+        cloud_file_deletion_delay(_cloud_file_deletion_delay),
+        throughput_target_gbps(_throughput_target_gbps) {
     (void) _cloud_type;
   }
 
@@ -559,6 +567,7 @@ class CloudFileSystem : public FileSystem {
   const std::shared_ptr<FileSystem>& GetBaseFileSystem() const {
     return base_fs_;
   }
+  virtual bool WaitPendingObjects() { return true; }
   virtual IOStatus PreloadCloudManifest(const std::string& local_dbname) = 0;
   // This method will migrate the database that is using pure RocksDB into
   // RocksDB-Cloud. Call this before opening the database with RocksDB-Cloud.

@@ -2,6 +2,7 @@
 //
 #pragma once
 
+#include <future>
 #include <unordered_map>
 
 #include "rocksdb/configurable.h"
@@ -111,6 +112,11 @@ class CloudStorageProvider : public Configurable {
   virtual IOStatus PutCloudObject(const std::string& local_path,
                                   const std::string& bucket_name,
                                   const std::string& object_path) = 0;
+
+  virtual IOStatus PutCloudObjectAsync(
+      const std::string& local_path, const std::string& bucket_name,
+      const std::string& object_path,
+      std::shared_ptr<std::promise<bool>> prom) = 0;
 
   // Updates/Sets the metadata of the object in cloud storage
   virtual IOStatus PutCloudObjectMetadata(

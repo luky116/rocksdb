@@ -12,6 +12,7 @@
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h>
 #include <aws/s3-crt/S3CrtClient.h>
 #include <aws/s3-crt/S3CrtErrors.h>
+#include <aws/s3-crt/S3CrtServiceClientModel.h>
 #include <aws/s3-crt/model/BucketLocationConstraint.h>
 #include <aws/s3-crt/model/CopyObjectRequest.h>
 #include <aws/s3-crt/model/CopyObjectResult.h>
@@ -226,6 +227,12 @@ class AwsS3ClientWrapper {
     return outcome;
   }
 
+  void PutCloudObjectAsync(
+      const Aws::S3Crt::Model::PutObjectRequest& request,
+      const Aws::S3Crt::PutObjectResponseReceivedHandler& handler) {
+    client_->PutObjectAsync(request, handler, nullptr);
+  }
+
   std::shared_ptr<Aws::Transfer::TransferHandle> UploadFile(
       const Aws::String& bucket_name, const Aws::String& object_path,
       const Aws::String& destination, uint64_t file_size) {
@@ -435,6 +442,10 @@ class S3StorageProvider : public CloudStorageProviderImpl {
                             const std::string& bucket_name,
                             const std::string& object_path,
                             uint64_t file_size) override;
+  IOStatus PutCloudObjectAsync(
+      const std::string& local_path, const std::string& bucket_name,
+      const std::string& object_path,
+      std::shared_ptr<std::promise<bool>> prom) override;
 
  private:
   struct HeadObjectResult {
@@ -1019,6 +1030,42 @@ IOStatus S3StorageProvider::DoGetCloudObject(const std::string& bucket_name,
       return IOStatus::IOError(std::move(errmsg));
     }
   }
+  return IOStatus::OK();
+}
+
+IOStatus S3StorageProvider::PutCloudObjectAsync(
+    const std::string& local_file, const std::string& bucket_name,
+    const std::string& object_path, std::shared_ptr<std::promise<bool>> prom) {
+  auto inputData =
+      Aws::MakeShared<Aws::FStream>(object_path.c_str(), local_file.c_str(),
+                                    std::ios_base::in | std::ios_base::out);
+
+  Aws::S3Crt::Model::PutObjectRequest putRequest;
+  putRequest.SetBucket(ToAwsString(bucket_name));
+  putRequest.SetKey(ToAwsString(object_path));
+  putRequest.SetBody(inputData);
+  SetEncryptionParameters(cfs_->GetCloudFileSystemOptions(), putRequest);
+  auto handler = Aws::S3Crt::PutObjectResponseReceivedHandler{
+      [prom, this](
+          const Aws::S3Crt::S3CrtClient*,
+          const Aws::S3Crt::Model::PutObjectRequest&,
+          const Aws::S3Crt::Model::PutObjectOutcome& outcome,
+          const std::shared_ptr<const Aws::Client::AsyncCallerContext>&) {
+        if (outcome.IsSuccess()) {
+          prom->set_value(true);
+        } else {
+          prom->set_value(false);
+        }
+      }};
+  auto begin_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
+  s3client_->PutCloudObjectAsync(putRequest, handler);
+  auto end_time = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
+  Log(InfoLogLevel::INFO_LEVEL, cfs_->GetLogger(),
+      "putobjectasync cost_time: %ld", (end_time - begin_time));
   return IOStatus::OK();
 }
 
