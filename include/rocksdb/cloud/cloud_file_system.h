@@ -436,8 +436,8 @@ class CloudFileSystemOptions {
   double throughput_target_gbps = 25.0;
 
   // AwsEventLoop thread num, this equals to processor of the machine in default implementations
-  // default: 20
-  int aws_ev_threads = 20;
+  // default: 10
+  int aws_ev_threads = 10;
 
   CloudFileSystemOptions(
       CloudType _cloud_type = CloudType::kCloudAws,
@@ -462,7 +462,7 @@ class CloudFileSystemOptions {
       bool _delete_cloud_invisible_files_on_open = true,
       std::chrono::seconds _cloud_file_deletion_delay = std::chrono::hours(1),
       double _throughput_target_gbps = 25.0,
-      int _aws_ev_threads = 20)
+      int _aws_ev_threads = 10)
       : log_type(_log_type),
         sst_file_cache(_sst_file_cache),
         keep_local_sst_files(_keep_local_sst_files),
