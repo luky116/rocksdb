@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#check-sources.sh!/usr/bin/env bash
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 #
 # Check for some simple mistakes that should prevent commit or push
@@ -46,5 +46,5 @@ fi
 if [ "$BAD" ]; then
   #TODO temporarily return ok for pass pipeline, because the error codes have also exist in official rocksdb-cloud
   echo "check-sources failed, temporarily return ok for pipeline"
-  //exit 1
+  #exit 1
 fi
