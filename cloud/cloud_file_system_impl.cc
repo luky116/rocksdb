@@ -158,14 +158,7 @@ IOStatus CloudFileSystemImpl::DownloadAsync(const std::string& logical_fname,
     }
   }
 
-  st = GetCloudObjectAsync(fname, prom_ptr);
-  if (st.ok() && cloud_fs_options.hasSstFileCache()) {
-    uint64_t local_size;
-    auto statx = base_fs_->GetFileSize(fname, io_opts, &local_size, nullptr);
-    if (statx.ok()) {
-      FileCacheInsert(fname, local_size);
-    }
-  }
+  GetCloudObjectAsync(fname, prom_ptr);
   return IOStatus::OK();
 }
 
