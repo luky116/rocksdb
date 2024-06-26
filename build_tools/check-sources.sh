@@ -1,4 +1,4 @@
-#check-sources.sh!/usr/bin/env bash
+#!/usr/bin/env bash
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 #
 # Check for some simple mistakes that should prevent commit or push
