@@ -440,11 +440,10 @@ class S3StorageProvider : public CloudStorageProviderImpl {
       IODebugContext* dbg) override;
   Status PrepareOptions(const ConfigOptions& options) override;
  protected:
-
-  IOStatus DoGetCloudObjectAsync(const std::string& bucket_name,
-                                 const std::string& object_path,
-                                 const std::string& local_path,
-                                 std::shared_ptr<std::promise<bool>> prom_ptr) override;
+  IOStatus DoGetCloudObjectAsync(
+      const std::string& bucket_name, const std::string& object_path,
+      const std::string& local_path,
+      std::shared_ptr<std::promise<bool>> prom_ptr) override;
 
   IOStatus DoGetCloudObject(const std::string& bucket_name,
                             const std::string& object_path,
@@ -890,14 +889,17 @@ namespace {
 class WritableFileStreamBuf : public std::streambuf {
  public:
   WritableFileStreamBuf(IOStatus* fileCloseStatus,
-			std::unique_ptr<WritableFileWriter>&& fileWriter, const std::string& fname = "", CloudFileSystem* cfs = nullptr)
-    : fileCloseStatus_(fileCloseStatus), fileWriter_(std::move(fileWriter)), fname_(fname), cfs_(cfs) {}
+			std::unique_ptr<WritableFileWriter>&& fileWriter)
+    : fileCloseStatus_(fileCloseStatus), fileWriter_(std::move(fileWriter)) {}
 
   ~WritableFileStreamBuf() {
     *fileCloseStatus_ = fileWriter_->Close();
   }
 
   // Flushes any buffered data
+  // move sync() from protected region to public
+  // because Close() is called after async handler been executed
+  // sync() must be called in async handler, or the file is incomplete
   int sync() override {
     auto st = fileWriter_->Flush();
     return st.ok() ? 0 : -1;
@@ -930,10 +932,10 @@ class WritableFileStreamBuf : public std::streambuf {
  private:
   IOStatus *fileCloseStatus_;
   std::unique_ptr<WritableFileWriter> fileWriter_;
-  std::string fname_;
-  CloudFileSystem* cfs_;
 };
 
+// shared_ptr version of IOStreamWithOwnedBuf
+// because Writablefile pointer must be reachable in async callback
 // std::iostream takes a raw pointer to std::streambuf. This subclass
 // takes a shared_ptr to the streambuf, tying the std::streambuf's
 // lifetime to the iostream's.
@@ -962,7 +964,6 @@ class IOStreamWithOwnedBuf : public std::iostream {
 
 }  // namespace
 
-
 IOStatus S3StorageProvider::DoGetCloudObjectAsync(
     const std::string& bucket_name, const std::string& object_path,
     const std::string& local_path,
@@ -980,19 +981,22 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
                             &file, foptions);
   if (!st.ok()) {
     Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
-        "create writeablefile for async download failed, msg: %s", st.ToString().c_str());
+        "create writeablefile for async download failed, msg: %s",
+        st.ToString().c_str());
     prom_ptr->set_value(false);
     return st;
   }
-  std::shared_ptr<WritableFileStreamBuf> file_stream_buf = 
-      std::make_shared<WritableFileStreamBuf>(fileCloseStatus.get(), 
-          std::unique_ptr<WritableFileWriter>(new WritableFileWriter(std::move(file),
-              tmp_destination, foptions)), tmp_destination, cfs_);
+  std::shared_ptr<WritableFileStreamBuf> file_stream_buf =
+      std::make_shared<WritableFileStreamBuf>(
+          fileCloseStatus.get(),
+          std::unique_ptr<WritableFileWriter>(new WritableFileWriter(
+              std::move(file), tmp_destination, foptions)),
+          tmp_destination, cfs_);
 
-  auto ioStreamFactory = [file_stream_buf, fileCloseStatus]() -> Aws::IOStream* {
+  auto ioStreamFactory = [file_stream_buf,
+                          fileCloseStatus]() -> Aws::IOStream* {
     return Aws::New<IOStreamWithOwnedBufSPtr<WritableFileStreamBuf>>(
-        Aws::Utils::ARRAY_ALLOCATION_TAG,
-        file_stream_buf);
+        Aws::Utils::ARRAY_ALLOCATION_TAG, file_stream_buf);
   };
 
   Aws::S3Crt::Model::GetObjectRequest request;
@@ -1001,31 +1005,33 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
   request.SetResponseStreamFactory(std::move(ioStreamFactory));
 
   auto handler = Aws::S3Crt::GetObjectResponseReceivedHandler{
-      [this, tmp_destination, local_path, prom_ptr, file_stream_buf] (
-      const Aws::S3Crt::S3CrtClient*, const Aws::S3Crt::Model::GetObjectRequest&, Aws::S3Crt::Model::GetObjectOutcome outcome,
-      const std::shared_ptr<const Aws::Client::AsyncCallerContext> &) {
-
-    file_stream_buf->sync();
-    const auto& local_fs = cfs_->GetBaseFileSystem();
-    const IOOptions io_opts;
-    IODebugContext* dbg = nullptr;
-    auto remote_size = outcome.GetResult().GetContentLength();
-    uint64_t local_size{0};
-    auto s = local_fs->GetFileSize(tmp_destination, io_opts, &local_size, dbg);
-    if (!outcome.IsSuccess() || !s.ok() ||
-        local_size != uint64_t(remote_size)) {
-      local_fs->DeleteFile(tmp_destination, io_opts, dbg);
-      Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(), "error outcome: %d, local_size: %lu, remote_size: %lu", 
-          outcome.IsSuccess(),
-          local_size,
-          uint64_t(remote_size));
-      prom_ptr->set_value(false);
-      return;
-    }
-    local_fs->RenameFile(tmp_destination, local_path, io_opts, dbg);
-    cfs_->FileCacheInsert(local_path, local_size);
-    prom_ptr->set_value(true);
-  }};
+      [this, tmp_destination, local_path, prom_ptr, file_stream_buf](
+          const Aws::S3Crt::S3CrtClient*,
+          const Aws::S3Crt::Model::GetObjectRequest&,
+          Aws::S3Crt::Model::GetObjectOutcome outcome,
+          const std::shared_ptr<const Aws::Client::AsyncCallerContext>&) {
+        file_stream_buf->sync();
+        const auto& local_fs = cfs_->GetBaseFileSystem();
+        const IOOptions io_opts;
+        IODebugContext* dbg = nullptr;
+        auto remote_size = outcome.GetResult().GetContentLength();
+        uint64_t local_size{0};
+        auto s =
+            local_fs->GetFileSize(tmp_destination, io_opts, &local_size, dbg);
+        if (!outcome.IsSuccess() || !s.ok() ||
+            local_size != uint64_t(remote_size)) {
+          local_fs->DeleteFile(tmp_destination, io_opts, dbg);
+          Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
+              "async download error, outcome: %d, local_size: %lu, "
+              "remote_size: %lu",
+              outcome.IsSuccess(), local_size, uint64_t(remote_size));
+          prom_ptr->set_value(false);
+          return;
+        }
+        local_fs->RenameFile(tmp_destination, local_path, io_opts, dbg);
+        cfs_->FileCacheInsert(local_path, local_size);
+        prom_ptr->set_value(true);
+      }};
 
   s3client_->GetCloudObjectAsync(request, handler);
   return IOStatus::OK();

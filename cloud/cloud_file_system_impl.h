@@ -384,7 +384,8 @@ class CloudFileSystemImpl : public CloudFileSystem {
  private:
   bool WaitPendingObjects() override;
 
-  IOStatus GetCloudObjectAsync(const std::string& fname, std::shared_ptr<std::promise<bool>> prom_ptr);
+  IOStatus GetCloudObjectAsync(const std::string& fname,
+                               std::shared_ptr<std::promise<bool>> prom_ptr);
 
   // Delete all local files that are invisible
   IOStatus DeleteLocalInvisibleFiles(

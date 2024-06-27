@@ -10,10 +10,10 @@
 #include "db/version_builder.h"
 
 #include <algorithm>
-#include <future>
 #include <atomic>
 #include <cinttypes>
 #include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <set>
@@ -1252,10 +1252,13 @@ class VersionBuilder::Rep {
         auto* file_meta = file_meta_pair.second;
         // If the file has been opened before, just skip it.
         if (!file_meta->table_reader_handle) {
-          std::shared_ptr<std::promise<bool>> prom_ptr = std::make_shared<std::promise<bool>>();
+          std::shared_ptr<std::promise<bool>> prom_ptr =
+              std::make_shared<std::promise<bool>>();
           files_meta.emplace_back(file_meta, level);
           pending_downloads.emplace_back(prom_ptr->get_future());
-          std::string fname = TableFileName(ioptions_->cf_paths, file_meta->fd.GetNumber(), file_meta->fd.GetPathId());
+          std::string fname =
+              TableFileName(ioptions_->cf_paths, file_meta->fd.GetNumber(),
+                            file_meta->fd.GetPathId());
           ioptions_->fs->DownloadAsync(fname, prom_ptr);
           statuses.emplace_back(Status::OK());
         }
@@ -1268,6 +1271,9 @@ class VersionBuilder::Rep {
       }
     }
 
+    // wait until all async download finished
+    // here we skip validating future returned value
+    // because it will redownload if local files were missing
     for (auto& fut : pending_downloads) {
       fut.get();
     }

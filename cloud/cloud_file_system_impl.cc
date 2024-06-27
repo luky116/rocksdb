@@ -141,14 +141,16 @@ IOStatus CloudFileSystemImpl::ListCloudObjects(
   return st;
 }
 
-IOStatus CloudFileSystemImpl::DownloadAsync(const std::string& logical_fname,
+IOStatus CloudFileSystemImpl::DownloadAsync(
+    const std::string& logical_fname,
     std::shared_ptr<std::promise<bool>> prom_ptr) {
   IOOptions io_opts;
   auto fname = RemapFilename(logical_fname);
   auto file_type = GetFileType(fname);
   IOStatus st;
   assert(file_type == RocksDBFileType::kSstFile);
-  Log(InfoLogLevel::ERROR_LEVEL, info_log_, "logical_fname: %s, fname: %s", logical_fname.c_str(), fname.c_str());
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "async download fname: %s",
+      logical_fname.c_str(), fname.c_str());
   if (cloud_fs_options.hasSstFileCache()) {
     st = base_fs_->FileExists(fname, io_opts, nullptr);
     if (st.ok()) {
@@ -849,8 +851,7 @@ IOStatus CloudFileSystemImpl::CopyLocalFileToDest(
   // upload sst
   std::shared_ptr<std::promise<bool>> prom =
       std::make_shared<std::promise<bool>>();
-  Log(InfoLogLevel::INFO_LEVEL, info_log_,
-      "uploading %s", local_name.c_str());
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "uploading %s", local_name.c_str());
   pending_objects_.emplace_back(prom->get_future());
   return GetStorageProvider()->PutCloudObjectAsync(
       local_name, GetDestBucketName(), dest_name, prom);
@@ -2476,7 +2477,8 @@ IOStatus CloudFileSystemImpl::FindAllLiveFiles(
 bool CloudFileSystemImpl::WaitPendingObjects() {
   bool ret = true;
 
-  Log(InfoLogLevel::ERROR_LEVEL, info_log_, "pending objects num: %d", int(pending_objects_.size()));
+  Log(InfoLogLevel::ERROR_LEVEL, info_log_, "pending objects num: %d",
+      int(pending_objects_.size()));
   for (auto i = 0; i < pending_objects_.size(); i++) {
     bool success = pending_objects_[i].get();
     if (!success) {

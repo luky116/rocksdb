@@ -21,13 +21,13 @@
 #include <chrono>
 #include <cstdarg>
 #include <functional>
+#include <future>
 #include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <future>
 
 #include "rocksdb/customizable.h"
 #include "rocksdb/env.h"
@@ -370,7 +370,8 @@ class FileSystem : public Customizable {
                                    std::unique_ptr<FSWritableFile>* result,
                                    IODebugContext* dbg) = 0;
 
-  virtual IOStatus DownloadAsync(const std::string& fname, std::shared_ptr<std::promise<bool>> prom_ptr) {
+  virtual IOStatus DownloadAsync(const std::string& fname,
+                                 std::shared_ptr<std::promise<bool>> prom_ptr) {
     prom_ptr->set_value(true);
     return IOStatus::OK();
   }
