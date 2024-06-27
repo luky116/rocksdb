@@ -990,8 +990,7 @@ IOStatus S3StorageProvider::DoGetCloudObjectAsync(
       std::make_shared<WritableFileStreamBuf>(
           fileCloseStatus.get(),
           std::unique_ptr<WritableFileWriter>(new WritableFileWriter(
-              std::move(file), tmp_destination, foptions)),
-          tmp_destination, cfs_);
+              std::move(file), tmp_destination, foptions)));
 
   auto ioStreamFactory = [file_stream_buf,
                           fileCloseStatus]() -> Aws::IOStream* {
