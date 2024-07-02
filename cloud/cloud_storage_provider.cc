@@ -3,6 +3,8 @@
 
 #include "rocksdb/cloud/cloud_storage_provider.h"
 
+#include <aws/s3-crt/S3CrtServiceClientModel.h>
+
 #include <cinttypes>
 #include <mutex>
 #include <set>
@@ -314,6 +316,14 @@ IOStatus CloudStorageProviderImpl::NewCloudReadableFile(
   }
   return DoNewCloudReadableFile(bucket, fname, info.size, info.content_hash,
                                 options, result, dbg);
+}
+
+IOStatus CloudStorageProviderImpl::GetCloudObjectAsync(
+    const std::string& bucket_name, const std::string& object_path,
+    const std::string& local_path,
+    std::shared_ptr<std::promise<bool>> prom_ptr) {
+  const auto& local_fs = cfs_->GetBaseFileSystem();
+  return DoGetCloudObjectAsync(bucket_name, object_path, local_path, prom_ptr);
 }
 
 IOStatus CloudStorageProviderImpl::GetCloudObject(

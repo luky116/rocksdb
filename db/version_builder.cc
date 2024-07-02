@@ -13,6 +13,7 @@
 #include <atomic>
 #include <cinttypes>
 #include <functional>
+#include <future>
 #include <map>
 #include <memory>
 #include <set>
@@ -233,7 +234,7 @@ class VersionBuilder::Rep {
   };
 
   const FileOptions& file_options_;
-  const ImmutableCFOptions* const ioptions_;
+  const ImmutableOptions* const ioptions_;
   TableCache* table_cache_;
   VersionStorageInfo* base_vstorage_;
   VersionSet* version_set_;
@@ -261,7 +262,7 @@ class VersionBuilder::Rep {
   std::shared_ptr<CacheReservationManager> file_metadata_cache_res_mgr_;
 
  public:
-  Rep(const FileOptions& file_options, const ImmutableCFOptions* ioptions,
+  Rep(const FileOptions& file_options, const ImmutableOptions* ioptions,
       TableCache* table_cache, VersionStorageInfo* base_vstorage,
       VersionSet* version_set,
       std::shared_ptr<CacheReservationManager> file_metadata_cache_res_mgr)
@@ -594,7 +595,7 @@ class VersionBuilder::Rep {
     // Note: we use C++11 for now but in C++14, this could be done in a more
     // elegant way using generalized lambda capture.
     VersionSet* const vs = version_set_;
-    const ImmutableCFOptions* const ioptions = ioptions_;
+    const ImmutableOptions* const ioptions = ioptions_;
 
     auto deleter = [vs, ioptions](SharedBlobFileMetaData* shared_meta) {
       if (vs) {
@@ -1245,12 +1246,20 @@ class VersionBuilder::Rep {
     // <file metadata, level>
     std::vector<std::pair<FileMetaData*, int>> files_meta;
     std::vector<Status> statuses;
+    std::vector<std::future<bool>> pending_downloads;
     for (int level = 0; level < num_levels_; level++) {
       for (auto& file_meta_pair : levels_[level].added_files) {
         auto* file_meta = file_meta_pair.second;
         // If the file has been opened before, just skip it.
         if (!file_meta->table_reader_handle) {
+          std::shared_ptr<std::promise<bool>> prom_ptr =
+              std::make_shared<std::promise<bool>>();
           files_meta.emplace_back(file_meta, level);
+          pending_downloads.emplace_back(prom_ptr->get_future());
+          std::string fname =
+              TableFileName(ioptions_->cf_paths, file_meta->fd.GetNumber(),
+                            file_meta->fd.GetPathId());
+          ioptions_->fs->DownloadAsync(fname, prom_ptr);
           statuses.emplace_back(Status::OK());
         }
         if (files_meta.size() >= max_load) {
@@ -1260,6 +1269,13 @@ class VersionBuilder::Rep {
       if (files_meta.size() >= max_load) {
         break;
       }
+    }
+
+    // wait until all async download finished
+    // here we skip validating future returned value
+    // because it will redownload if local files were missing
+    for (auto& fut : pending_downloads) {
+      fut.get();
     }
 
     std::atomic<size_t> next_file_meta_idx(0);
@@ -1309,7 +1325,7 @@ class VersionBuilder::Rep {
 };
 
 VersionBuilder::VersionBuilder(
-    const FileOptions& file_options, const ImmutableCFOptions* ioptions,
+    const FileOptions& file_options, const ImmutableOptions* ioptions,
     TableCache* table_cache, VersionStorageInfo* base_vstorage,
     VersionSet* version_set,
     std::shared_ptr<CacheReservationManager> file_metadata_cache_res_mgr)

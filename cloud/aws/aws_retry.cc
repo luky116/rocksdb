@@ -154,6 +154,7 @@ Status AwsCloudOptions::GetClientConfiguration(
   config->useVirtualAddressing = false;
 
   config->region = ToAwsString(region);
+  config->throughputTargetGbps = cloud_fs_options.throughput_target_gbps;
   return Status::OK();
 }
 #else

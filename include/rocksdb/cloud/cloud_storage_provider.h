@@ -108,6 +108,12 @@ class CloudStorageProvider : public Configurable {
                                   const std::string& object_path,
                                   const std::string& local_path) = 0;
 
+  // Downloads object from the cloud into a local directory
+  virtual IOStatus GetCloudObjectAsync(
+      const std::string& bucket_name, const std::string& object_path,
+      const std::string& local_path,
+      std::shared_ptr<std::promise<bool>> prom_ptr) = 0;
+
   // Uploads object to the cloud
   virtual IOStatus PutCloudObject(const std::string& local_path,
                                   const std::string& bucket_name,

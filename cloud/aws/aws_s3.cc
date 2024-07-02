@@ -201,6 +201,12 @@ class AwsS3ClientWrapper {
     return outcome;
   }
 
+  void GetCloudObjectAsync(
+      const Aws::S3Crt::Model::GetObjectRequest& request,
+      const Aws::S3Crt::GetObjectResponseReceivedHandler& handler) {
+    client_->GetObjectAsync(request, handler, nullptr);
+  }
+
   template <class... Args>
   std::shared_ptr<Aws::Transfer::TransferHandle> DownloadFile(Args... args) {
     CloudRequestCallbackGuard guard(cloud_request_callback_.get(),
@@ -434,6 +440,11 @@ class S3StorageProvider : public CloudStorageProviderImpl {
       IODebugContext* dbg) override;
   Status PrepareOptions(const ConfigOptions& options) override;
  protected:
+  IOStatus DoGetCloudObjectAsync(
+      const std::string& bucket_name, const std::string& object_path,
+      const std::string& local_path,
+      std::shared_ptr<std::promise<bool>> prom_ptr) override;
+
   IOStatus DoGetCloudObject(const std::string& bucket_name,
                             const std::string& object_path,
                             const std::string& destination,
@@ -729,7 +740,7 @@ IOStatus S3StorageProvider::ExistsCloudObject(const std::string& bucket_name,
 IOStatus S3StorageProvider::GetCloudObjectSize(const std::string& bucket_name,
                                                const std::string& object_path,
                                                uint64_t* filesize) {
-  HeadObjectResult result;                                             
+  HeadObjectResult result;
   result.size = filesize;
   return HeadObject(bucket_name, object_path, &result);
 }
@@ -900,6 +911,15 @@ class WritableFileStreamBuf : public std::streambuf {
     *fileCloseStatus_ = fileWriter_->Close();
   }
 
+  // Flushes any buffered data
+  // move sync() from protected region to public
+  // because Close() is called after async handler been executed
+  // sync() must be called in async handler, or the file is incomplete
+  int sync() override {
+    auto st = fileWriter_->Flush();
+    return st.ok() ? 0 : -1;
+  }
+
  protected:
   // Appends a block of data to the stream. Must always write n if possible
   std::streamsize xsputn(const char* s, std::streamsize n) override {
@@ -924,15 +944,24 @@ class WritableFileStreamBuf : public std::streambuf {
     return ch;
   }
 
-  // Flushes any buffered data
-  int sync() override {
-    auto st = fileWriter_->Flush();
-    return st.ok() ? 0 : -1;
-  }
-
  private:
   IOStatus *fileCloseStatus_;
   std::unique_ptr<WritableFileWriter> fileWriter_;
+};
+
+// shared_ptr version of IOStreamWithOwnedBuf
+// because Writablefile pointer must be reachable in async callback
+// std::iostream takes a raw pointer to std::streambuf. This subclass
+// takes a shared_ptr to the streambuf, tying the std::streambuf's
+// lifetime to the iostream's.
+template <class T>
+class IOStreamWithOwnedBufSPtr : public std::iostream {
+ public:
+  IOStreamWithOwnedBufSPtr(std::shared_ptr<T> s)
+      : std::iostream(s.get()), s_(s) {}
+
+ private:
+  std::shared_ptr<T> s_;
 };
 
 // std::iostream takes a raw pointer to std::streambuf. This subclass
@@ -949,6 +978,78 @@ class IOStreamWithOwnedBuf : public std::iostream {
 };
 
 }  // namespace
+
+IOStatus S3StorageProvider::DoGetCloudObjectAsync(
+    const std::string& bucket_name, const std::string& object_path,
+    const std::string& local_path,
+    std::shared_ptr<std::promise<bool>> prom_ptr) {
+  std::string tmp_destination =
+      local_path + ".tmp-" + std::to_string(rng_.Next());
+
+  std::shared_ptr<IOStatus> fileCloseStatus = std::make_shared<IOStatus>();
+
+  FileOptions foptions;
+  foptions.use_direct_writes =
+      cfs_->GetCloudFileSystemOptions().use_direct_io_for_cloud_download;
+  std::unique_ptr<FSWritableFile> file;
+  auto st = NewWritableFile(cfs_->GetBaseFileSystem().get(), tmp_destination,
+                            &file, foptions);
+  if (!st.ok()) {
+    Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
+        "create writeablefile for async download failed, msg: %s",
+        st.ToString().c_str());
+    prom_ptr->set_value(false);
+    return st;
+  }
+  std::shared_ptr<WritableFileStreamBuf> file_stream_buf =
+      std::make_shared<WritableFileStreamBuf>(
+          fileCloseStatus.get(),
+          std::unique_ptr<WritableFileWriter>(new WritableFileWriter(
+              std::move(file), tmp_destination, foptions)));
+
+  auto ioStreamFactory = [file_stream_buf,
+                          fileCloseStatus]() -> Aws::IOStream* {
+    return Aws::New<IOStreamWithOwnedBufSPtr<WritableFileStreamBuf>>(
+        Aws::Utils::ARRAY_ALLOCATION_TAG, file_stream_buf);
+  };
+
+  Aws::S3Crt::Model::GetObjectRequest request;
+  request.SetBucket(ToAwsString(bucket_name));
+  request.SetKey(ToAwsString(object_path));
+  request.SetResponseStreamFactory(std::move(ioStreamFactory));
+
+  auto handler = Aws::S3Crt::GetObjectResponseReceivedHandler{
+      [this, tmp_destination, local_path, prom_ptr, file_stream_buf](
+          const Aws::S3Crt::S3CrtClient*,
+          const Aws::S3Crt::Model::GetObjectRequest&,
+          Aws::S3Crt::Model::GetObjectOutcome outcome,
+          const std::shared_ptr<const Aws::Client::AsyncCallerContext>&) {
+        file_stream_buf->sync();
+        const auto& local_fs = cfs_->GetBaseFileSystem();
+        const IOOptions io_opts;
+        IODebugContext* dbg = nullptr;
+        auto remote_size = outcome.GetResult().GetContentLength();
+        uint64_t local_size{0};
+        auto s =
+            local_fs->GetFileSize(tmp_destination, io_opts, &local_size, dbg);
+        if (!outcome.IsSuccess() || !s.ok() ||
+            local_size != uint64_t(remote_size)) {
+          local_fs->DeleteFile(tmp_destination, io_opts, dbg);
+          Log(InfoLogLevel::ERROR_LEVEL, cfs_->GetLogger(),
+              "async download error, outcome: %d, local_size: %lu, "
+              "remote_size: %lu",
+              outcome.IsSuccess(), local_size, uint64_t(remote_size));
+          prom_ptr->set_value(false);
+          return;
+        }
+        local_fs->RenameFile(tmp_destination, local_path, io_opts, dbg);
+        cfs_->FileCacheInsert(local_path, local_size);
+        prom_ptr->set_value(true);
+      }};
+
+  s3client_->GetCloudObjectAsync(request, handler);
+  return IOStatus::OK();
+}
 
 IOStatus S3StorageProvider::DoGetCloudObject(const std::string& bucket_name,
                                              const std::string& object_path,

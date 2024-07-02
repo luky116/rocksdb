@@ -16,7 +16,7 @@
 
 namespace ROCKSDB_NAMESPACE {
 
-struct ImmutableCFOptions;
+struct ImmutableOptions;
 class TableCache;
 class VersionStorageInfo;
 class VersionEdit;
@@ -33,7 +33,7 @@ class CacheReservationManager;
 class VersionBuilder {
  public:
   VersionBuilder(const FileOptions& file_options,
-                 const ImmutableCFOptions* ioptions, TableCache* table_cache,
+                 const ImmutableOptions* ioptions, TableCache* table_cache,
                  VersionStorageInfo* base_vstorage, VersionSet* version_set,
                  std::shared_ptr<CacheReservationManager>
                      file_metadata_cache_res_mgr = nullptr);
