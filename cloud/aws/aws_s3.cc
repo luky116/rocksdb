@@ -1159,6 +1159,7 @@ IOStatus S3StorageProvider::PutCloudObjectAsync(
   Aws::S3Crt::Model::PutObjectRequest putRequest;
   putRequest.SetBucket(ToAwsString(bucket_name));
   putRequest.SetKey(ToAwsString(object_path));
+  putRequest.SetChecksumAlgorithm(cfs_->GetCloudFileSystemOptions().checksum_algorithm_);
   putRequest.SetBody(inputData);
   SetEncryptionParameters(cfs_->GetCloudFileSystemOptions(), putRequest);
   auto handler = Aws::S3Crt::PutObjectResponseReceivedHandler{

@@ -149,8 +149,6 @@ IOStatus CloudFileSystemImpl::DownloadAsync(
   auto file_type = GetFileType(fname);
   IOStatus st;
   assert(file_type == RocksDBFileType::kSstFile);
-  Log(InfoLogLevel::INFO_LEVEL, info_log_, "async download fname: %s",
-      logical_fname.c_str(), fname.c_str());
   if (cloud_fs_options.hasSstFileCache()) {
     st = base_fs_->FileExists(fname, io_opts, nullptr);
     if (st.ok()) {
