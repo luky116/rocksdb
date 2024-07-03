@@ -1,6 +1,8 @@
 //  Copyright (c) 2016-present, Rockset, Inc.  All rights reserved.
 //
 #pragma once
+#include <aws/s3-crt/model/ChecksumAlgorithm.h>
+
 #include <chrono>
 #include <functional>
 #include <memory>
@@ -434,6 +436,11 @@ class CloudFileSystemOptions {
   //
   // Default: 25.0 Gbps
   double throughput_target_gbps = 25.0;
+
+  // checksum algorithm, default use crc32, because it's faster than MD5
+  // according to test
+  Aws::S3Crt::Model::ChecksumAlgorithm checksum_algorithm_ =
+      Aws::S3Crt::Model::ChecksumAlgorithm::CRC32;
 
   // AwsEventLoop thread num, this equals to processor of the machine in default
   // implementations default: 10
