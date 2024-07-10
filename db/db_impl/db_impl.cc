@@ -4850,7 +4850,7 @@ Status DBImpl::CheckConsistency() {
     gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
     std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-3】 costs: " << gapTs << "ms" << std::endl;
   } else {
-    uint8_t count = 0;
+    uint32_t count = 0;
     for (const auto& md : metadata) {
       // md.name has a leading "/".
       std::string file_path = md.db_path + md.name;
