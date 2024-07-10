@@ -128,6 +128,9 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
                                  dbg);  // MJR: TODO: Move into sanitize
   }
 
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+  std::cout << "【CostStatis】【DBCloud::Open】【part-1】 costs: " << gapTs << std::endl;
+
   bool new_db = false;
   auto startTs1 = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   // If cloud manifest is already loaded, this means the directory has been
@@ -138,6 +141,8 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
     if (st.ok()) {
       st = cfs->LoadCloudManifest(local_dbname, read_only); // 2、检查 S3 上的 Manifest-epoch 文件，并删除不是当前版本号的文件
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+    std::cout << "【CostStatis】【DBCloud::Open】【part-2】 costs: " << gapTs << std::endl;
     if (st.IsNotFound()) {
       Log(InfoLogLevel::INFO_LEVEL, options.info_log,
           "CLOUDMANIFEST not found in the cloud, assuming this is a new "
@@ -159,8 +164,8 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
       return st;
     }
   }
-  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
-  std::cout << "【CostStatis】【DBCloud::Open】【part1】 costs: " << gapTs << std::endl;
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+  std::cout << "【CostStatis】【DBCloud::Open】【part-3】 costs: " << gapTs << std::endl;
 
   // Local environment, to be owned by DBCloudImpl, so that it outlives the
   // cache object created below.
@@ -192,6 +197,9 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
       }
     }
   }
+
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+  std::cout << "【CostStatis】【DBCloud::Open】【part-4】 costs: " << gapTs << std::endl;
   // We do not want a very large MANIFEST file because the MANIFEST file is
   // uploaded to S3 for every update, so always enable rolling of Manifest file
    options.max_manifest_file_size = DBCloudImpl::max_manifest_file_size;

@@ -4873,6 +4873,7 @@ Status DBImpl::CheckConsistency() {
       }
       gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
       std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-3." << std::to_string(count) << "】 costs: " << "ms, file_path: " << file_path << std::endl;
+      count++;
     }
     gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
     std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-4】 costs: " << gapTs << "ms" << std::endl;

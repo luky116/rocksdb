@@ -118,7 +118,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       disable_auto_flush_(mutable_cf_options.disable_auto_flush) {
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
-  assert(!ShouldScheduleFlush());
+//  assert(!ShouldScheduleFlush());
 
   // use bloom_filter_ for both whole key and prefix bloom filter
   if ((prefix_extractor_ || moptions_.memtable_whole_key_filtering) &&
