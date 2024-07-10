@@ -1701,7 +1701,7 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
     }
   }
   gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
-  std::cout << "【CostStatis】【CloudFileSystemImpl::LoadCloudManifest】【delete-unsed-data】 costs: " << gapTs << "ms" << std::endl;
+  std::cout << "【CostStatis】【CloudFileSystemImpl::LoadCloudManifest】【delete-unsed-file】 costs: " << gapTs << "ms" << std::endl;
 
   if (st.ok() && cloud_fs_options.roll_cloud_manifest_on_open &&
       cloud_fs_options.is_master) { // TODO 优化项目

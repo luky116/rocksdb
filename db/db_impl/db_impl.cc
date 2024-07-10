@@ -4797,7 +4797,7 @@ Status DBImpl::CheckConsistency() {
   auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   mutex_.AssertHeld();
   std::vector<LiveFileMetaData> metadata;
-  versions_->GetLiveFilesMetaData(&metadata);
+  versions_->GetLiveFilesMetaData(&metadata); // metadata 包含了 rocks-cloud 的全部文件
   TEST_SYNC_POINT("DBImpl::CheckConsistency:AfterGetLiveFilesMetaData");
 
   auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
