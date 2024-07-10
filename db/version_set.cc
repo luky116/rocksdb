@@ -2948,11 +2948,17 @@ void Version::PrepareAppend(const MutableCFOptions& mutable_cf_options,
       "Version::PrepareAppend:forced_check",
       reinterpret_cast<void*>(&storage_info_.force_consistency_checks_));
 
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
   if (update_stats) {
     UpdateAccumulatedStats();
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Version::PrepareAppend】【UpdateAccumulatedStats】 costs: " << gapTs << "ms" << std::endl;
   }
 
   storage_info_.PrepareForVersionAppend(*cfd_->ioptions(), mutable_cf_options);
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【Version::PrepareAppend】【PrepareForVersionAppend】 costs: " << gapTs << "ms" << std::endl;
 }
 
 bool Version::MaybeInitializeFileMetaData(FileMetaData* file_meta) {
