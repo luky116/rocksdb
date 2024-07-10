@@ -544,6 +544,7 @@ ColumnFamilyData* VersionEditHandler::DestroyCfAndCleanup(
 Status VersionEditHandler::MaybeCreateVersion(const VersionEdit& /*edit*/,
                                               ColumnFamilyData* cfd,
                                               bool force_create_version) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
 //  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   assert(cfd->initialized());
   Status s;
@@ -554,7 +555,10 @@ Status VersionEditHandler::MaybeCreateVersion(const VersionEdit& /*edit*/,
     auto* v = new Version(cfd, version_set_, version_set_->file_options_,
                           *cfd->GetLatestMutableCFOptions(), io_tracer_,
                           version_set_->current_version_number_++);
+
     s = builder->SaveTo(v->storage_info());
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionEditHandler::MaybeCreateVersion】【SaveToLocal】 costs: " << gapTs << "ms" << std::endl;
     if (s.ok()) {
       // Install new version
       v->PrepareAppend(
@@ -564,6 +568,8 @@ Status VersionEditHandler::MaybeCreateVersion(const VersionEdit& /*edit*/,
     } else {
       delete v;
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionEditHandler::MaybeCreateVersion】【AppendVersion】【all】 costs: " << gapTs << "ms" << std::endl;
   }
 //  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
 //  std::cout << "【CostStatis】【VersionEditHandler::MaybeCreateVersion】【all】 costs: " << gapTs << "ms" << std::endl;

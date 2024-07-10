@@ -1286,7 +1286,7 @@ class VersionBuilder::Rep {
     for (auto& fut : pending_downloads) {
       fut.get();
       gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
-      std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-2." << std::to_string(count) <<"】 costs: " << gapTs << "ms" << std::endl;
+      std::cout << "【CostStatis】【Status::LoadTableHandlers】【AsyncDownSST-2." << std::to_string(count) <<"】 costs: " << gapTs << "ms" << std::endl;
       count++;
     }
     gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;

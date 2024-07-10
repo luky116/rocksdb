@@ -1648,8 +1648,12 @@ IOStatus CloudFileSystemImpl::PreloadCloudManifest(
 
 IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
                                                 bool read_only) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   // Init cloud manifest
   auto st = FetchCloudManifest(local_dbname); // 从 S3 拉取 CLOUDMANIFEST 文件并插入到本地磁盘。如果 srcBucket 和 destBucket 配置一致，则一定会从 S3 拉取
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【CloudFileSystemImpl::LoadCloudManifest】【FetchCloudManifest】 costs: " << gapTs << "ms" << std::endl;
+
   if (st.ok()) {
     // Inits CloudFileSystemImpl::cloud_manifest_, which will enable us to
     // read files from the cloud
@@ -1673,6 +1677,9 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
           "CLOUDMANIFEST points to MANIFEST that doesn't exist in s3");
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【CloudFileSystemImpl::LoadCloudManifest】【part-3】 costs: " << gapTs << "ms" << std::endl;
+
 
   // Do the cleanup, but don't fail if the cleanup fails.
   // We only cleanup files which don't belong to cookie_on_open. Also, we do it
@@ -1693,6 +1700,8 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
       st = IOStatus::OK();
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【CloudFileSystemImpl::LoadCloudManifest】【delete-unsed-data】 costs: " << gapTs << "ms" << std::endl;
 
   if (st.ok() && cloud_fs_options.roll_cloud_manifest_on_open &&
       cloud_fs_options.is_master) { // TODO 优化项目
@@ -1707,6 +1716,9 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
     cloud_manifest_.reset();
     return st;
   }
+
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【CloudFileSystemImpl::LoadCloudManifest】【RollNewEpoch】 costs: " << gapTs << "ms" << std::endl;
 
   const IOOptions io_opts;
   IODebugContext* dbg = nullptr;
@@ -1724,7 +1736,8 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
       return st;
     }
   }
-
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【CloudFileSystemImpl::LoadCloudManifest】【SetCurrentFileName】【all】 costs: " << gapTs << "ms" << std::endl;
   return st;
 }
 
