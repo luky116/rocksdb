@@ -3,6 +3,7 @@
 
 #include "cloud/cloud_file_system_impl.h"
 
+#include <iostream>
 #include <cinttypes>
 
 #include "cloud/cloud_file_deletion_scheduler.h"
@@ -66,6 +67,8 @@ IOStatus CloudFileSystemImpl::ExistsCloudObject(const std::string& fname) {
 }
 
 IOStatus CloudFileSystemImpl::GetCloudObject(const std::string& fname) {
+  std::cout << "【CloudFileSystemImpl::GetCloudObject】dowoload file: " << fname << std::endl;
+
   auto st = IOStatus::NotFound();
   if (HasDestBucket()) {
     st = GetStorageProvider()->GetCloudObject(GetDestBucketName(),
@@ -149,8 +152,10 @@ IOStatus CloudFileSystemImpl::DownloadAsync(
   auto file_type = GetFileType(fname);
   IOStatus st;
   assert(file_type == RocksDBFileType::kSstFile);
+  Log(InfoLogLevel::INFO_LEVEL, info_log_, "async download fname: %s",
+      logical_fname.c_str(), fname.c_str());
   if (cloud_fs_options.hasSstFileCache()) {
-    st = base_fs_->FileExists(fname, io_opts, nullptr);
+    st = base_fs_->FileExists(fname, io_opts, nullptr); // 如果本地存在，则使用本地磁盘的文件
     if (st.ok()) {
       FileCacheAccess(fname);
       prom_ptr->set_value(true);
@@ -182,11 +187,11 @@ IOStatus CloudFileSystemImpl::NewCloudReadableFile(
 
 // open a file for sequential reading
 IOStatus CloudFileSystemImpl::NewSequentialFile(
-    const std::string& logical_fname, const FileOptions& file_opts,
+    const std::string& logical_fname, const FileOptions& file_opts, // logic_name = "./pika-cloud2/data-6600-3/db/db0/0/MANIFEST-000001"
     std::unique_ptr<FSSequentialFile>* result, IODebugContext* dbg) {
   result->reset();
 
-  auto fname = RemapFilename(logical_fname);
+  auto fname = RemapFilename(logical_fname); // 这里会将 ligical_fname 转换为 cloud 的名字， fname = "./pika-cloud2/data-6600-3/db/db0/0/MANIFEST-5759342050d1b3aa"
   auto file_type = GetFileType(fname);
   bool sstfile = (file_type == RocksDBFileType::kSstFile),
        manifest = (file_type == RocksDBFileType::kManifestFile),
@@ -201,10 +206,10 @@ IOStatus CloudFileSystemImpl::NewSequentialFile(
   if (sstfile || manifest || identity) {
     if (cloud_fs_options.keep_local_sst_files || !sstfile) {
       // We read first from local storage and then from cloud storage.
-      st = base_fs_->NewSequentialFile(fname, file_opts, result, dbg);
+      st = base_fs_->NewSequentialFile(fname, file_opts, result, dbg); // 从本地读取
       if (!st.ok()) {
         // copy the file to the local storage if keep_local_sst_files is true
-        st = GetCloudObject(fname);
+        st = GetCloudObject(fname); // 如果本地不存在，则从 S3 上读取
         if (st.ok()) {
           // we successfully copied the file, try opening it locally now
           st = base_fs_->NewSequentialFile(fname, file_opts, result, dbg);
@@ -989,7 +994,7 @@ std::string RemapFilenameWithCloudManifest(const std::string& logical_path,
     case kTableFile:
       // We should not be accessing sst files before CLOUDMANIFEST is loaded
       assert(cloud_manifest);
-      epoch = cloud_manifest->GetEpoch(fileNumber);
+      epoch = cloud_manifest->GetEpoch(fileNumber); // CloudManifest 保存了当前合法的 apopch 号
       break;
     case kDescriptorFile:
       // We should not be accessing MANIFEST files before CLOUDMANIFEST is
@@ -1057,7 +1062,7 @@ IOStatus CloudFileSystemImpl::DeleteLocalInvisibleFiles(
     return s;
   }
   for (auto& fname : children) {
-    if (IsFileInvisible(active_cookies, fname)) {
+    if (IsFileInvisible(active_cookies, fname)) { // 判断文件是否过期。从 CloudManifest 获取当前合理的 epoch 号，如果命名符合规范，则不删除；否则视为过期文件直接删除清理
       // Ignore returned status on purpose.
       Log(InfoLogLevel::INFO_LEVEL, info_log_,
           "DeleteLocalInvisibleFiles deleting file %s from local dir",
@@ -1071,7 +1076,7 @@ IOStatus CloudFileSystemImpl::DeleteLocalInvisibleFiles(
 bool CloudFileSystemImpl::IsFileInvisible(
     const std::vector<std::string>& active_cookies,
     const std::string& fname) const {
-  if (IsCloudManifestFile(fname)) {
+  if (IsCloudManifestFile(fname)) { // 如果是 CloudManifest 文件
     auto fname_cookie = GetCookie(fname);
 
     // empty cookie CM file is never deleted
@@ -1081,7 +1086,7 @@ bool CloudFileSystemImpl::IsFileInvisible(
     }
 
     bool is_active = false;
-    for (auto& c : active_cookies) {
+    for (auto& c : active_cookies) { // CloudManifest 会保留多个版本的文件
       if (c == fname_cookie) {
         is_active = true;
         break;
@@ -1089,10 +1094,10 @@ bool CloudFileSystemImpl::IsFileInvisible(
     }
 
     return !is_active;
-  } else {
-    auto noepoch = RemoveEpoch(fname);
+  } else { // 如果不是 CloudManifest 文件，只保留最新的一个版本的文件
+    auto noepoch = RemoveEpoch(fname); // 使用 - 切割文件名
     if ((IsSstFile(noepoch) || IsManifestFile(noepoch)) &&
-        (RemapFilename(noepoch) != fname)) {
+        (RemapFilename(noepoch) != fname)) { // CloudManifest 记录了当前合法的 epoch 号，如果不是这个号码，会被删除
       return true;
     }
   }
@@ -1151,7 +1156,7 @@ IOStatus CloudFileSystemImpl::WriteCloudManifest(
   auto s = WritableFileWriter::Create(local_fs, tmp_fname, FileOptions(),
                                       &writer, nullptr);
   if (s.ok()) {
-    s = manifest->WriteToLog(std::move(writer));
+    s = manifest->WriteToLog(std::move(writer)); // 写 WAL 日志
   }
   if (s.ok()) {
     s = local_fs->RenameFile(tmp_fname, fname, IOOptions(), nullptr /*dbg*/);
@@ -1221,7 +1226,7 @@ IOStatus CloudFileSystemImpl::NeedsReinitialization(
       local_dir.c_str(), GetSrcBucketName().c_str(), GetSrcObjectPath().c_str(),
       GetDestBucketName().c_str(), GetDestObjectPath().c_str());
 
-  // If no buckets are specified, then we cannot reinit anyways
+  // If no buckets are specified, then we cannot reinit anyways  如果没有配置 S3，则无需进行初始化
   if (!HasSrcBucket() && !HasDestBucket()) {
     Log(InfoLogLevel::INFO_LEVEL, info_log_,
         "[cloud_fs_impl] NeedsReinitialization: "
@@ -1238,7 +1243,7 @@ IOStatus CloudFileSystemImpl::NeedsReinitialization(
   const IOOptions io_opts;
   IODebugContext* dbg = nullptr;
 
-  // Check if local directory exists
+  // Check if local directory exists 文件夹不存在，需要进行格式化
   auto st = base_fs->FileExists(local_dir, io_opts, dbg);
   if (!st.ok()) {
     Log(InfoLogLevel::ERROR_LEVEL, info_log_,
@@ -1250,7 +1255,7 @@ IOStatus CloudFileSystemImpl::NeedsReinitialization(
     return st.IsNotFound() ? IOStatus::OK() : st;
   }
 
-  // Check if CURRENT file exists
+  // Check if CURRENT file exists 如果 CURRENT 文化不存在，需要格式化
   st = base_fs->FileExists(CurrentFileName(local_dir), io_opts, dbg);
   if (!st.ok()) {
     Log(InfoLogLevel::INFO_LEVEL, info_log_,
@@ -1260,7 +1265,7 @@ IOStatus CloudFileSystemImpl::NeedsReinitialization(
     return st.IsNotFound() ? IOStatus::OK() : st;
   }
 
-  // Check if CLOUDMANIFEST file exists
+  // Check if CLOUDMANIFEST file exists 如果 CLOUDMANIFEST 文化不存在，需要格式化
   st = base_fs->FileExists(CloudManifestFile(local_dir), io_opts, dbg);
   if (!st.ok()) {
     Log(InfoLogLevel::INFO_LEVEL, info_log_,
@@ -1270,7 +1275,7 @@ IOStatus CloudFileSystemImpl::NeedsReinitialization(
     return st.IsNotFound() ? IOStatus::OK() : st;
   }
 
-  if (cloud_fs_options.skip_dbid_verification) {
+  if (cloud_fs_options.skip_dbid_verification) { // 如果设置了 skip_dbid_verification 跳过本地和 S3 的校验，无需进行初始化
     *do_reinit = false;
     return IOStatus::OK();
   }
@@ -1644,18 +1649,18 @@ IOStatus CloudFileSystemImpl::PreloadCloudManifest(
 IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
                                                 bool read_only) {
   // Init cloud manifest
-  auto st = FetchCloudManifest(local_dbname);
+  auto st = FetchCloudManifest(local_dbname); // 从 S3 拉取 CLOUDMANIFEST 文件并插入到本地磁盘。如果 srcBucket 和 destBucket 配置一致，则一定会从 S3 拉取
   if (st.ok()) {
     // Inits CloudFileSystemImpl::cloud_manifest_, which will enable us to
     // read files from the cloud
-    st = LoadLocalCloudManifest(local_dbname);
+    st = LoadLocalCloudManifest(local_dbname); // 从本地磁盘读取 CLOUDMANIFEST 文件
   }
 
-  if (st.ok() && cloud_fs_options.resync_on_open &&
+  if (st.ok() && cloud_fs_options.resync_on_open && // resync_on_open =true 表示，一定从 S3 拉取 CLOUDMANIFEST 文件
       cloud_fs_options.resync_manifest_on_open) {
     auto epoch = cloud_manifest_->GetCurrentEpoch();
-    st = FetchManifest(local_dbname, epoch);
-    if (st.IsNotFound()) {
+    st = FetchManifest(local_dbname, epoch); // 从 S3 拉取最新的 Manifest 文件
+    if (st.IsNotFound()) { // 如果 S3 上不存在 MANIFEST-epoch 文件，直接报错。以 S3 上的文件高优先级
       // We always upload MANIFEST first before uploading CLOUDMANIFEST. So it's
       // not expected to have CLOUDMANIFEST in s3 which points to MANIFEST file
       // that doesn't exist.
@@ -1672,13 +1677,13 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
   // Do the cleanup, but don't fail if the cleanup fails.
   // We only cleanup files which don't belong to cookie_on_open. Also, we do it
   // before rolling the epoch, so that newly generated CM/M files won't be
-  // cleaned up.
+  // cleaned up. 清理不属于本次 cookie 的文件
   if (st.ok() && !read_only && cloud_fs_options.is_master) {
     std::vector<std::string> active_cookies{
         cloud_fs_options.cookie_on_open, cloud_fs_options.new_cookie_on_open};
-    st = DeleteLocalInvisibleFiles(local_dbname, active_cookies);
+    st = DeleteLocalInvisibleFiles(local_dbname, active_cookies); // 移除过期文件。这里只会移除 CloudManifest、SST、 Manifest 文件
     if (st.ok() && cloud_fs_options.delete_cloud_invisible_files_on_open &&
-        HasDestBucket()) {
+        HasDestBucket()) { // TODO 优化项。这里会删除 cloud 上过期的文件。
       st = DeleteCloudInvisibleFiles(active_cookies);
     }
     if (!st.ok()) {
@@ -1690,9 +1695,9 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
   }
 
   if (st.ok() && cloud_fs_options.roll_cloud_manifest_on_open &&
-      cloud_fs_options.is_master) {
+      cloud_fs_options.is_master) { // TODO 优化项目
     // Rolls the new epoch in CLOUDMANIFEST (only for existing databases)
-    st = RollNewEpoch(local_dbname);
+    st = RollNewEpoch(local_dbname); // 创建一个新的 epoch 号码，更新本地的 CloudManifest 文件，并上传到 S3 上。
     if (st.IsNotFound()) {
       st = IOStatus::Corruption(
           "CLOUDMANIFEST points to MANIFEST that doesn't exist");
@@ -1705,7 +1710,7 @@ IOStatus CloudFileSystemImpl::LoadCloudManifest(const std::string& local_dbname,
 
   const IOOptions io_opts;
   IODebugContext* dbg = nullptr;
-  if (FileExists(CurrentFileName(local_dbname), io_opts, dbg).IsNotFound()) {
+  if (FileExists(CurrentFileName(local_dbname), io_opts, dbg).IsNotFound()) { // 如果 Current 不存在，TODO 代码待理解
     // Create dummy CURRENT file to point to the dummy manifest (cloud env
     // will remap the filename appropriately, this is just to fool the
     // underyling RocksDB)
@@ -1733,11 +1738,11 @@ IOStatus CloudFileSystemImpl::SanitizeDirectory(const DBOptions& options,
   const IOOptions io_opts;
   IODebugContext* dbg = nullptr;
   if (!read_only) {
-    local_fs->CreateDirIfMissing(local_name, io_opts, dbg);
+    local_fs->CreateDirIfMissing(local_name, io_opts, dbg); // 如果目录不存在，则创建
   }
 
   if (cloud_fs_options.hasSstFileCache() &&
-      cloud_fs_options.keep_local_sst_files) {
+      cloud_fs_options.keep_local_sst_files) {  // 只允许二选一进行设置 // TODO 待理解
     std::string msg =
         "Only one of sst_file_cache or keep_local_sst_files can be set";
     return IOStatus::InvalidArgument(msg);
@@ -1745,7 +1750,7 @@ IOStatus CloudFileSystemImpl::SanitizeDirectory(const DBOptions& options,
 
   // Shall we reinitialize the clone dir?
   bool do_reinit = true;
-  auto st = NeedsReinitialization(local_name, &do_reinit);
+  auto st = NeedsReinitialization(local_name, &do_reinit); // 如果 目录不存在、CURRENT、CLOUDMANIFEST，返回 true，表示文件夹错误
   if (!st.ok()) {
     Log(InfoLogLevel::ERROR_LEVEL, info_log_,
         "[cloud_fs_impl] SanitizeDirectory error inspecting dir %s %s",
@@ -1776,7 +1781,7 @@ IOStatus CloudFileSystemImpl::SanitizeDirectory(const DBOptions& options,
     }
   }
 
-  if (!do_reinit) {
+  if (!do_reinit) { // 如果无需重新初始化，则直接退出
     Log(InfoLogLevel::INFO_LEVEL, info_log_,
         "[cloud_fs_impl] SanitizeDirectory local directory %s is good",
         local_name.c_str());
@@ -1788,7 +1793,7 @@ IOStatus CloudFileSystemImpl::SanitizeDirectory(const DBOptions& options,
 
   // Delete all local files
   std::vector<Env::FileAttributes> result;
-  st = local_fs->GetChildrenFileAttributes(local_name, io_opts, &result, dbg);
+  st = local_fs->GetChildrenFileAttributes(local_name, io_opts, &result, dbg); // 移除 db 目录下的所有文件
   if (!st.ok() && !st.IsNotFound()) {
     return st;
   }
@@ -1796,7 +1801,7 @@ IOStatus CloudFileSystemImpl::SanitizeDirectory(const DBOptions& options,
     if (file.name == "." || file.name == "..") {
       continue;
     }
-    if (file.name.find("LOG") == 0) {  // keep LOG files
+    if (file.name.find("LOG") == 0) {  // keep LOG files LOG 文件不删除
       continue;
     }
     std::string pathname = local_name + "/" + file.name;
@@ -1830,7 +1835,7 @@ IOStatus CloudFileSystemImpl::SanitizeDirectory(const DBOptions& options,
     }
     Log(InfoLogLevel::INFO_LEVEL, info_log_,
         "[cloud_fs_impl] SanitizeDirectory cleaned-up: '%s'", pathname.c_str());
-  }
+  } // end: 移除 db 目录下的所有文件
 
   if (!st.ok()) {
     // ignore all the errors generated during cleaning up
@@ -1843,7 +1848,7 @@ IOStatus CloudFileSystemImpl::SanitizeDirectory(const DBOptions& options,
 
   bool got_identity_from_dest = false, got_identity_from_src = false;
 
-  // Download IDENTITY, first try destination, then source
+  // Download IDENTITY, first try destination, then source 从 S3 下载 IDENTITY 文件。 TODO 这个文件的含义是啥？？
   if (HasDestBucket()) {
     // download IDENTITY from dest
     st = GetStorageProvider()->GetCloudObject(
@@ -1914,8 +1919,8 @@ IOStatus CloudFileSystemImpl::FetchCloudManifest(
   // TODO(wei): following check is to make sure we maintain the same behavior
   // as before. Once we double check every service has right resync_on_open set,
   // we should remove.
-  bool resync_on_open = cloud_fs_options.resync_on_open;
-  if (SrcMatchesDest() && !resync_on_open) {
+  bool resync_on_open = cloud_fs_options.resync_on_open; // 如果为 true，每次必然从 S3 拉取 CLOUDMANIFEST，否则使用本地磁盘的 CLOUDMANIFEST 文件
+  if (SrcMatchesDest() && !resync_on_open) { // TODO 如果 sec=dest，则每次必然从远程拉取。这是为啥呢？？？？
     Log(InfoLogLevel::WARN_LEVEL, info_log_,
         "[cloud_fs_impl] FetchCloudManifest: Src bucket matches dest bucket "
         "but resync_on_open not enabled. Force enabling it for now");
@@ -1924,7 +1929,7 @@ IOStatus CloudFileSystemImpl::FetchCloudManifest(
 
   // If resync_on_open is false and we have a local cloud manifest, do nothing.
   if (!resync_on_open &&
-      GetBaseFileSystem()
+      GetBaseFileSystem() // 直接使用本地的
           ->FileExists(cloudmanifest, IOOptions(), nullptr /*dbg*/)
           .ok()) {
     // nothing to do here, we have our cloud manifest
@@ -1935,7 +1940,7 @@ IOStatus CloudFileSystemImpl::FetchCloudManifest(
     return IOStatus::OK();
   }
   // first try to get cloudmanifest from dest
-  if (HasDestBucket()) {
+  if (HasDestBucket()) { // 先尝试从 dest 拉取 CloudManifest 文件
     auto st = GetStorageProvider()->GetCloudObject(
         GetDestBucketName(), MakeCloudManifestFile(GetDestObjectPath(), cookie),
         cloudmanifest);
@@ -1957,7 +1962,7 @@ IOStatus CloudFileSystemImpl::FetchCloudManifest(
     }
   }
   // we couldn't get cloud manifest from dest, need to try from src?
-  if (HasSrcBucket() && !SrcMatchesDest()) {
+  if (HasSrcBucket() && !SrcMatchesDest()) { // 再尝试从 src 拉取 CloudManifest 文件
     auto st = GetStorageProvider()->GetCloudObject(
         GetSrcBucketName(), MakeCloudManifestFile(GetSrcObjectPath(), cookie),
         cloudmanifest);
@@ -2064,7 +2069,7 @@ IOStatus CloudFileSystemImpl::GetMaxManifestSequenceFromCurrentManifest(
 IOStatus CloudFileSystemImpl::RollNewEpoch(const std::string& local_dbname) {
   assert(cloud_fs_options.roll_cloud_manifest_on_open);
   // Find next file number. We use dummy MANIFEST filename, which should get
-  // remapped into the correct MANIFEST filename through CloudManifest.
+  // remapped into the correct MANIFEST filename through CloudManifest. 新文件会根据 CloudManifest 的元数据信息来命令
   // After this call we should also have a local file named
   // MANIFEST-<current_epoch> (unless st.IsNotFound()).
   uint64_t maxFileNumber;
@@ -2075,17 +2080,17 @@ IOStatus CloudFileSystemImpl::RollNewEpoch(const std::string& local_dbname) {
     return st;
   }
   // roll new epoch
-  auto newEpoch = GenerateNewEpochId();
+  auto newEpoch = GenerateNewEpochId(); // 修改当前生效的版本号，随机生成的
   // To make sure `RollNewEpoch` is backwards compatible, we don't change
   // the cookie when applying CM delta
   auto newCookie = cloud_fs_options.new_cookie_on_open;
   auto cloudManifestDelta = CloudManifestDelta{maxFileNumber, newEpoch};
 
-  st = RollNewCookie(local_dbname, newCookie, cloudManifestDelta);
+  st = RollNewCookie(local_dbname, newCookie, cloudManifestDelta); // 创建一个新的 CloudManifest，写入到本地磁盘，并上传到 S3 上
   if (st.ok()) {
     // Apply the delta to our in-memory state, too.
     bool updateApplied = true;
-    st = ApplyCloudManifestDelta(cloudManifestDelta, &updateApplied);
+    st = ApplyCloudManifestDelta(cloudManifestDelta, &updateApplied); // 内存的 cloud_manifest_ 添加和这个 epoch
     // We know for sure that <maxFileNumber, newEpoch> hasn't been applied
     // in current CLOUDMANFIEST yet since maxFileNumber >= filenumber in
     // CLOUDMANIFEST and epoch is generated randomly
@@ -2183,7 +2188,7 @@ IOStatus CloudFileSystemImpl::RollNewCookie(
   // However, we don't move here, we copy. If we moved and crashed immediately
   // after (before writing CLOUDMANIFEST), we'd corrupt our database. The old
   // MANIFEST file will be cleaned up in DeleteInvisibleFiles().
-  auto st = CopyFile(
+  auto st = CopyFile( // copy 老的 manifest 文件为新的 manifest 文件
       base_fs.get(), ManifestFileWithEpoch(local_dbname, old_epoch),
       ManifestFileWithEpoch(local_dbname, delta.epoch), 0 /* size */,
       true /* use_fsync */, nullptr /* io_tracer */, Temperature::kUnknown);
@@ -2202,7 +2207,7 @@ IOStatus CloudFileSystemImpl::RollNewCookie(
 
   // Dump cloud_manifest into the CLOUDMANIFEST-cookie file
   st = WriteCloudManifest(newCloudManifest.get(),
-                          MakeCloudManifestFile(local_dbname, cookie));
+                          MakeCloudManifestFile(local_dbname, cookie)); // 将新的 CloudManifest 写入到磁盘
   if (!st.ok()) {
     return st;
   }
@@ -2211,7 +2216,7 @@ IOStatus CloudFileSystemImpl::RollNewCookie(
     // We have to upload the manifest file first. Otherwise, if the process
     // crashed in the middle, we'll endup with a CLOUDMANIFEST file pointing to
     // MANIFEST file which doesn't exist in s3
-    st = UploadManifest(local_dbname, delta.epoch);
+    st = UploadManifest(local_dbname, delta.epoch); //  CloudManifest 文件上传到 S3 上
     if (!st.ok()) {
       return st;
     }

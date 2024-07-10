@@ -10,6 +10,7 @@
 #include "db/version_edit_handler.h"
 
 #include <cinttypes>
+#include <iostream>
 #include <sstream>
 
 #include "db/blob/blob_file_reader.h"
@@ -21,6 +22,7 @@ namespace ROCKSDB_NAMESPACE {
 
 void VersionEditHandlerBase::Iterate(log::Reader& reader,
                                      Status* log_read_status) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   Slice record;
   std::string scratch;
   assert(log_read_status);
@@ -66,7 +68,10 @@ void VersionEditHandlerBase::Iterate(log::Reader& reader,
     s = *log_read_status;
   }
 
-  CheckIterationResult(reader, &s);
+  CheckIterationResult(reader, &s); // 重点优化项。从 S3 上下载缺失的文件
+
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【CheckIterationResult】 costs: " << gapTs << "ms" << std::endl;
 
   if (!s.ok()) {
     if (s.IsCorruption()) {
@@ -91,6 +96,8 @@ void VersionEditHandlerBase::Iterate(log::Reader& reader,
     }
     status_ = s;
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【VersionEditHandlerBase::Iterate】 costs: " << gapTs << "ms" << std::endl;
   TEST_SYNC_POINT_CALLBACK("VersionEditHandlerBase::Iterate:Finish",
                            &recovered_edits);
 }
@@ -359,6 +366,8 @@ void VersionEditHandler::CheckColumnFamilyId(const VersionEdit& edit,
 
 void VersionEditHandler::CheckIterationResult(const log::Reader& reader,
                                               Status* s) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
   assert(s != nullptr);
   if (!s->ok()) {
     // Do nothing here.
@@ -421,7 +430,10 @@ void VersionEditHandler::CheckIterationResult(const log::Reader& reader,
         cfd->table_cache()->SetTablesAreImmortal();
       }
       *s = LoadTables(cfd, /*prefetch_index_and_filter_in_cache=*/false,
-                      /*is_initial_load=*/true);
+                      /*is_initial_load=*/true); // 从 S3 上下载文件，耗时选项
+
+      auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+      std::cout << "【CostStatis】【VersionEditHandler::CheckIterationResult【after LoadTables】 costs: " << gapTs << "ms" << std::endl;
       if (!s->ok()) {
         // If s is IOError::PathNotFound, then we mark the db as corrupted.
         if (s->IsPathNotFound()) {
@@ -444,6 +456,8 @@ void VersionEditHandler::CheckIterationResult(const log::Reader& reader,
       }
     }
   }
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【VersionEditHandler::CheckIterationResult【part-1】 costs: " << gapTs << "ms" << std::endl;
   if (s->ok()) {
     version_set_->manifest_file_size_ = reader.GetReadOffset();
     assert(version_set_->manifest_file_size_ > 0);
@@ -481,6 +495,8 @@ void VersionEditHandler::CheckIterationResult(const log::Reader& reader,
           version_edit_params_.GetReplicationSequence();
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【VersionEditHandler::CheckIterationResult【all】 costs: " << gapTs << "ms" << std::endl;
 }
 
 ColumnFamilyData* VersionEditHandler::CreateCfAndInit(
@@ -528,6 +544,7 @@ ColumnFamilyData* VersionEditHandler::DestroyCfAndCleanup(
 Status VersionEditHandler::MaybeCreateVersion(const VersionEdit& /*edit*/,
                                               ColumnFamilyData* cfd,
                                               bool force_create_version) {
+//  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   assert(cfd->initialized());
   Status s;
   if (force_create_version) {
@@ -548,6 +565,8 @@ Status VersionEditHandler::MaybeCreateVersion(const VersionEdit& /*edit*/,
       delete v;
     }
   }
+//  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+//  std::cout << "【CostStatis】【VersionEditHandler::MaybeCreateVersion】【all】 costs: " << gapTs << "ms" << std::endl;
   return s;
 }
 

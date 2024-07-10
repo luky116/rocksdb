@@ -4,6 +4,7 @@
 #include "cloud/db_cloud_impl.h"
 
 #include <cinttypes>
+#include <iostream>
 
 #include "cloud/cloud_file_system_impl.h"
 #include "cloud/filename.h"
@@ -87,6 +88,7 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
                      const uint64_t persistent_cache_size_gb,
                      std::vector<ColumnFamilyHandle*>* handles, DBCloud** dbptr,
                      bool read_only) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   Status st;
   Options options = opt;
 
@@ -111,29 +113,30 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
     // default values in NewSstFileManager.
     // If users don't use Options.sst_file_manager, then these values are used
     // currently when creating an SST File Manager.
-    options.sst_file_manager = std::make_shared<ConstantSizeSstFileManager>(
+    options.sst_file_manager = std::make_shared<ConstantSizeSstFileManager>( // 是否要启动 sst_file_manager
         constant_sst_file_size, options.env->GetSystemClock(),
         options.env->GetFileSystem(), options.info_log,
         0 /* rate_bytes_per_sec */, 0.25 /* max_trash_db_ratio */,
         64 * 1024 * 1024 /* bytes_max_delete_chunk */);
   }
 
-  const auto& local_fs = cfs->GetBaseFileSystem();
+  const auto& local_fs = cfs->GetBaseFileSystem(); // 操作本地的 SST 文件
   const IOOptions io_opts;
   IODebugContext* dbg = nullptr;
   if (!read_only) {
-    local_fs->CreateDirIfMissing(local_dbname, io_opts,
+    local_fs->CreateDirIfMissing(local_dbname, io_opts, // 如果不存在则创建本地的 DB 目录
                                  dbg);  // MJR: TODO: Move into sanitize
   }
 
   bool new_db = false;
+  auto startTs1 = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   // If cloud manifest is already loaded, this means the directory has been
   // sanitized (possibly by the call to ListColumnFamilies())
-  if (cfs->GetCloudManifest() == nullptr) {
-    st = cfs->SanitizeDirectory(options, local_dbname, read_only);
+  if (cfs->GetCloudManifest() == nullptr) { // 1、尝试从磁盘获取本地的 CloudManifest 文件
+    st = cfs->SanitizeDirectory(options, local_dbname, read_only); // 初始化本地磁盘，有必要会把本地路径的全部文件全部删除
 
     if (st.ok()) {
-      st = cfs->LoadCloudManifest(local_dbname, read_only);
+      st = cfs->LoadCloudManifest(local_dbname, read_only); // 2、检查 S3 上的 Manifest-epoch 文件，并删除不是当前版本号的文件
     }
     if (st.IsNotFound()) {
       Log(InfoLogLevel::INFO_LEVEL, options.info_log,
@@ -145,17 +148,19 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
       return st;
     }
   }
-  if (new_db) {
+  if (new_db) { // 新 db，创建新的 CloudManifest 文件
     if (read_only || !options.create_if_missing) {
       return Status::NotFound(
           "CLOUDMANIFEST not found and not creating new db");
     }
-    st = cfs->CreateCloudManifest(
+    st = cfs->CreateCloudManifest( // 创建新的 CloudManifest 文件
         local_dbname, cfs->GetCloudFileSystemOptions().new_cookie_on_open);
     if (!st.ok()) {
       return st;
     }
   }
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+  std::cout << "【CostStatis】【DBCloud::Open】【part1】 costs: " << gapTs << std::endl;
 
   // Local environment, to be owned by DBCloudImpl, so that it outlives the
   // cache object created below.
@@ -163,7 +168,7 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
       new CompositeEnvWrapper(options.env, local_fs));
 
   // If a persistent cache path is specified, then we set it in the options.
-  if (!persistent_cache_path.empty() && persistent_cache_size_gb) {
+  if (!persistent_cache_path.empty() && persistent_cache_size_gb) { // TODO 待研究是否是优化项
     // Get existing options. If the persistent cache is already set, then do
     // not make any change. Otherwise, configure it.
     auto* tableopt =
@@ -189,23 +194,26 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
   }
   // We do not want a very large MANIFEST file because the MANIFEST file is
   // uploaded to S3 for every update, so always enable rolling of Manifest file
-  options.max_manifest_file_size = DBCloudImpl::max_manifest_file_size;
+   options.max_manifest_file_size = DBCloudImpl::max_manifest_file_size;
 
+   auto startTs2 = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   DB* db = nullptr;
   std::string dbid;
-  if (read_only) {
+  if (read_only) { // TODO 这个 read_only 模式是否可以用来做 pika 的 slave？？
     st = DB::OpenForReadOnly(options, local_dbname, column_families, handles,
                              &db);
   } else {
-    st = DB::Open(options, local_dbname, column_families, handles, &db);
+    st = DB::Open(options, local_dbname, column_families, handles, &db); // 核心逻辑：真正初始化一个 rocksdb 的逻辑
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs2;
+  std::cout << "【CostStatis】【DBCloud::Open】【DB::Open】 costs: " << gapTs << std::endl;
 
   if (new_db && st.ok() && cfs->HasDestBucket() &&
       cfs->GetCloudFileSystemOptions().roll_cloud_manifest_on_open) {
     // This is a new database, upload the CLOUDMANIFEST after all MANIFEST file
     // was already uploaded. It is at this point we consider the database
     // committed in the cloud.
-    st = cfs->UploadCloudManifest(
+    st = cfs->UploadCloudManifest( // 如果是新的 db，初始化完 rocksdb，会将 CloudManifest 文件上传到远端的 S3 上存储
         local_dbname, cfs->GetCloudFileSystemOptions().new_cookie_on_open);
   }
 
@@ -226,6 +234,9 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
   Log(InfoLogLevel::INFO_LEVEL, options.info_log,
       "Opened cloud db with local dir %s dbid %s. %s", local_dbname.c_str(),
       dbid.c_str(), st.ToString().c_str());
+
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBCloud::Open】 costs: " << gapTs << ", cf_name " << cfs << std::endl;
   return st;
 }
 

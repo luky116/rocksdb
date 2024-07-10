@@ -6,7 +6,10 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
+using namespace std;
+
 #include <cinttypes>
+#include <iostream>
 
 #include "db/builder.h"
 #include "db/db_impl/db_impl.h"
@@ -421,6 +424,8 @@ Status DBImpl::Recover(
     const std::vector<ColumnFamilyDescriptor>& column_families, bool read_only,
     bool error_if_wal_file_exists, bool error_if_data_exists_in_wals,
     uint64_t* recovered_seq, RecoveryContext* recovery_ctx) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
   mutex_.AssertHeld();
 
   bool is_new_db = false;
@@ -439,7 +444,7 @@ Status DBImpl::Recover(
       return s;
     }
 
-    std::string current_fname = CurrentFileName(dbname_);
+    std::string current_fname = CurrentFileName(dbname_); // 获取 current 文件，得到当前的 LSM tree 的所有 SST 文件信息
     // Path to any MANIFEST file in the db dir. It does not matter which one.
     // Since best-efforts recovery ignores CURRENT file, existence of a
     // MANIFEST indicates the recovery to recover existing db. If no MANIFEST
@@ -472,6 +477,8 @@ Status DBImpl::Recover(
         }
       }
     }
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-1】 costs: " << gapTs << "ms" << std::endl;
     if (s.IsNotFound()) {
       if (immutable_db_options_.create_if_missing) {
         s = NewDB(&files_in_dbname);
@@ -493,6 +500,8 @@ Status DBImpl::Recover(
       assert(s.IsIOError());
       return s;
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-2】 costs: " << gapTs << "ms" << std::endl;
     // Verify compatibility of file_options_ and filesystem
     {
       std::unique_ptr<FSRandomAccessFile> idfile;
@@ -516,6 +525,8 @@ Status DBImpl::Recover(
         }
       }
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-2】 costs: " << gapTs << "ms" << std::endl;
   } else if (immutable_db_options_.best_efforts_recovery) {
     assert(files_in_dbname.empty());
     IOOptions io_opts;
@@ -529,22 +540,32 @@ Status DBImpl::Recover(
       return s;
     }
     assert(s.ok());
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-3】 costs: " << gapTs << "ms" << std::endl;
   }
   assert(db_id_.empty());
   Status s;
   bool missing_table_file = false;
-  if (!immutable_db_options_.best_efforts_recovery) {
+  if (!immutable_db_options_.best_efforts_recovery) { // 目前走的这个逻辑，可能是个优化项目
     s = versions_->Recover(column_families, read_only, &db_id_);
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-3.1】 costs: " << gapTs << "ms" << std::endl;
   } else {
     assert(!files_in_dbname.empty());
     s = versions_->TryRecover(column_families, read_only, files_in_dbname,
                               &db_id_, &missing_table_file);
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-3.2】 costs: " << gapTs << "ms" << std::endl;
     if (s.ok()) {
       // TryRecover may delete previous column_family_set_.
       column_family_memtables_.reset(
           new ColumnFamilyMemTablesImpl(versions_->GetColumnFamilySet()));
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-3.3】 costs: " << gapTs << "ms" << std::endl;
   }
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Recover】【part-4】 costs: " << gapTs << "ms" << std::endl;
   if (!s.ok()) {
     return s;
   }
@@ -564,9 +585,14 @@ Status DBImpl::Recover(
   }
 #endif
 
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Recover】【part-4.1】 costs: " << gapTs << "ms" << std::endl;
+
   if (immutable_db_options_.paranoid_checks && s.ok()) {
-    s = CheckConsistency();
+    s = CheckConsistency(); // 耗时大
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Recover】【part-4.2】 costs: " << gapTs << "ms" << std::endl;
   if (s.ok() && !read_only) {
     // TODO: share file descriptors (FSDirectory) with SetDirectories above
     std::map<std::string, std::shared_ptr<FSDirectory>> created_dirs;
@@ -577,6 +603,8 @@ Status DBImpl::Recover(
       }
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Recover】【part-5】 costs: " << gapTs << "ms" << std::endl;
 
   std::vector<std::string> files_in_wal_dir;
   if (s.ok()) {
@@ -630,6 +658,8 @@ Status DBImpl::Recover(
       }
     }
 
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-6】 costs: " << gapTs << "ms" << std::endl;
     if (immutable_db_options_.track_and_verify_wals_in_manifest) {
       if (!immutable_db_options_.best_efforts_recovery) {
         // Verify WALs in MANIFEST.
@@ -653,6 +683,8 @@ Status DBImpl::Recover(
     if (!s.ok()) {
       return s;
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-7】 costs: " << gapTs << "ms" << std::endl;
 
     if (!wal_files.empty()) {
       if (error_if_wal_file_exists) {
@@ -673,6 +705,8 @@ Status DBImpl::Recover(
         }
       }
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-8】 costs: " << gapTs << "ms" << std::endl;
 
     if (!wal_files.empty()) {
       // Recover in the order in which the wals were generated
@@ -698,6 +732,8 @@ Status DBImpl::Recover(
       }
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Recover】【part-9】 costs: " << gapTs << "ms" << std::endl;
 
   if (read_only) {
     // If we are opening as read-only, we need to update options_file_number_
@@ -720,6 +756,8 @@ Status DBImpl::Recover(
             GetName(), io_opts, &filenames, /*IODebugContext*=*/nullptr);
       }
     }
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Recover】【part-10】 costs: " << gapTs << "ms" << std::endl;
     if (s.ok()) {
       uint64_t number = 0;
       uint64_t options_file_number = 0;
@@ -738,6 +776,8 @@ Status DBImpl::Recover(
       versions_->options_file_size_ = options_file_size;
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Recover】【all】 costs: " << gapTs << "ms" << std::endl;
   return s;
 }
 
@@ -1817,7 +1857,9 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
                     const std::vector<ColumnFamilyDescriptor>& column_families,
                     std::vector<ColumnFamilyHandle*>* handles, DB** dbptr,
                     const bool seq_per_batch, const bool batch_per_txn) {
-  Status s = ValidateOptionsByTable(db_options, column_families);
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
+  Status s = ValidateOptionsByTable(db_options, column_families); // 检查 db 和 cf 的配置参数是否合法
   if (!s.ok()) {
     return s;
   }
@@ -1833,11 +1875,13 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
 
   size_t max_write_buffer_size = 0;
   for (auto cf : column_families) {
-    max_write_buffer_size =
+    max_write_buffer_size = // 取最大的 write_buffer_size 最终使用
         std::max(max_write_buffer_size, cf.options.write_buffer_size);
   }
 
   DBImpl* impl = new DBImpl(db_options, dbname, seq_per_batch, batch_per_txn);
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【new DBImpl】 costs: " << gapTs << "ms" << std::endl;
   if (!impl->immutable_db_options_.info_log) {
     s = impl->init_logger_creation_s_;
     delete impl;
@@ -1846,6 +1890,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     assert(impl->init_logger_creation_s_.ok());
   }
   s = impl->env_->CreateDirIfMissing(impl->immutable_db_options_.GetWalDir());
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【part--2】 costs: " << gapTs << "ms" << std::endl;
   if (s.ok()) {
     std::vector<std::string> paths;
     for (auto& db_path : impl->immutable_db_options_.db_paths) {
@@ -1876,6 +1922,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     delete impl;
     return s;
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【part-0】 costs: " << gapTs << "ms" << std::endl;
 
   impl->wal_in_db_path_ = impl->immutable_db_options_.IsWalDirSameAsDBPath();
   RecoveryContext recovery_ctx;
@@ -1884,7 +1932,11 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   // Handles create_if_missing, error_if_exists
   uint64_t recovered_seq(kMaxSequenceNumber);
   s = impl->Recover(column_families, false, false, false, &recovered_seq,
-                    &recovery_ctx);
+                    &recovery_ctx); // 核心逻辑，这里会从 S3 拉取文件到本地
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  // 耗时最大是
+  std::cout << "【CostStatis】【DBImpl::Open】【Recover】 costs: " << gapTs << "ms" << std::endl;
+
   if (s.ok()) {
     uint64_t new_log_number = impl->versions_->NewFileNumber();
     log::Writer* new_log = nullptr;
@@ -1939,6 +1991,9 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     s = impl->LogAndApplyForRecovery(recovery_ctx);
   }
 
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【LogAndApplyForRecovery】 costs: " << gapTs << "ms" << std::endl;
+
   if (s.ok() && impl->immutable_db_options_.persist_stats_to_disk) {
     impl->mutex_.AssertHeld();
     s = impl->InitPersistStatsColumnFamily();
@@ -1972,6 +2027,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
       }
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【part-3】 costs: " << gapTs << "ms" << std::endl;
 
   if (s.ok()) {
     SuperVersionContext sv_context(/* create_superversion */ true);
@@ -2004,6 +2061,9 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
       }
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【part-4】 costs: " << gapTs << "ms" << std::endl;
+
   TEST_SYNC_POINT("DBImpl::Open:Opened");
   Status persist_options_status;
   if (s.ok()) {
@@ -2012,16 +2072,27 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     persist_options_status = impl->WriteOptionsFile(
         false /*need_mutex_lock*/, false /*need_enter_write_thread*/);
 
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Open】【part-4.1】 costs: " << gapTs << "ms" << std::endl;
+
     *dbptr = impl;
     impl->opened_successfully_ = true;
     impl->DeleteObsoleteFiles();
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Open】【part-4.2】 costs: " << gapTs << "ms" << std::endl;
     TEST_SYNC_POINT("DBImpl::Open:AfterDeleteFiles");
     impl->MaybeScheduleFlushOrCompaction();
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Open】【part-4.3】 costs: " << gapTs << "ms" << std::endl;
   } else {
     persist_options_status.PermitUncheckedError();
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::Open】【part-4.4】 costs: " << gapTs << "ms" << std::endl;
   }
   impl->mutex_.Unlock();
 
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【part-4.5】 costs: " << gapTs << "ms" << std::endl;
 #ifndef ROCKSDB_LITE
   auto sfm = static_cast<SstFileManagerImpl*>(
       impl->immutable_db_options_.sst_file_manager.get());
@@ -2105,6 +2176,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     sfm->ReserveDiskBuffer(max_write_buffer_size,
                            impl->immutable_db_options_.db_paths[0].path);
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【part-5】 costs: " << gapTs << "ms" << std::endl;
 
 #endif  // !ROCKSDB_LITE
 
@@ -2146,6 +2219,8 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     delete impl;
     *dbptr = nullptr;
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::Open】【all】 costs: " << gapTs << "ms" << std::endl;
   return s;
 }
 }  // namespace ROCKSDB_NAMESPACE

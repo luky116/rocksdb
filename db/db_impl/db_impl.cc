@@ -17,6 +17,7 @@
 #include <cinttypes>
 #include <cstdio>
 #include <map>
+#include <iostream>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -4793,10 +4794,14 @@ void DBImpl::GetAllColumnFamilyMetaData(
 #endif  // ROCKSDB_LITE
 
 Status DBImpl::CheckConsistency() {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   mutex_.AssertHeld();
   std::vector<LiveFileMetaData> metadata;
   versions_->GetLiveFilesMetaData(&metadata);
   TEST_SYNC_POINT("DBImpl::CheckConsistency:AfterGetLiveFilesMetaData");
+
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-1】 costs: " << gapTs << "ms" << std::endl;
 
   std::string corruption_messages;
 
@@ -4818,6 +4823,8 @@ Status DBImpl::CheckConsistency() {
 
     IOOptions io_opts;
     io_opts.do_not_recurse = true;
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-2】 costs: " << gapTs << "ms" << std::endl;
     for (const auto& dir_files : files_by_directory) {
       std::string directory = dir_files.first;
       std::vector<std::string> existing_files;
@@ -4840,7 +4847,10 @@ Status DBImpl::CheckConsistency() {
         }
       }
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-3】 costs: " << gapTs << "ms" << std::endl;
   } else {
+    uint8_t count = 0;
     for (const auto& md : metadata) {
       // md.name has a leading "/".
       std::string file_path = md.db_path + md.name;
@@ -4861,7 +4871,11 @@ Status DBImpl::CheckConsistency() {
                                std::to_string(md.size) + ", actual size " +
                                std::to_string(fsize) + "\n";
       }
+      gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+      std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-3." << std::to_string(count) << "】 costs: " << "ms, file_path: " << file_path << std::endl;
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【DBImpl::CheckConsistency】【part-4】 costs: " << gapTs << "ms" << std::endl;
   }
 
   if (corruption_messages.size() == 0) {
@@ -4869,6 +4883,8 @@ Status DBImpl::CheckConsistency() {
   } else {
     return Status::Corruption(corruption_messages);
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBImpl::CheckConsistency】【all】 costs: " << gapTs << "ms" << std::endl;
 }
 
 Status DBImpl::GetDbIdentity(std::string& identity) const {

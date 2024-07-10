@@ -405,6 +405,7 @@ class CloudFileSystemOptions {
   // ready
   //
   // Default: "", means new cloud manifest file won't have cookie suffix
+  // TODO leader/follower 是啥含义？？？
   std::string new_cookie_on_open;
 
   // Experimental option!

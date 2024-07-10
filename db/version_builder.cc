@@ -10,6 +10,7 @@
 #include "db/version_builder.h"
 
 #include <algorithm>
+#include <iostream>
 #include <atomic>
 #include <cinttypes>
 #include <functional>
@@ -1210,6 +1211,8 @@ class VersionBuilder::Rep {
       bool prefetch_index_and_filter_in_cache, bool is_initial_load,
       const std::shared_ptr<const SliceTransform>& prefix_extractor,
       size_t max_file_size_for_l0_meta_pin) {
+    auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
     assert(table_cache_ != nullptr);
 
     size_t table_cache_capacity = table_cache_->get_cache()->GetCapacity();
@@ -1243,6 +1246,9 @@ class VersionBuilder::Rep {
       }
     }
 
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-1】 costs: " << gapTs << "ms" << std::endl;
+
     // <file metadata, level>
     std::vector<std::pair<FileMetaData*, int>> files_meta;
     std::vector<Status> statuses;
@@ -1259,7 +1265,7 @@ class VersionBuilder::Rep {
           std::string fname =
               TableFileName(ioptions_->cf_paths, file_meta->fd.GetNumber(),
                             file_meta->fd.GetPathId());
-          ioptions_->fs->DownloadAsync(fname, prom_ptr);
+          ioptions_->fs->DownloadAsync(fname, prom_ptr); // 异步下载文件
           statuses.emplace_back(Status::OK());
         }
         if (files_meta.size() >= max_load) {
@@ -1270,13 +1276,21 @@ class VersionBuilder::Rep {
         break;
       }
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-2】 costs: " << gapTs << "ms" << std::endl;
 
     // wait until all async download finished
     // here we skip validating future returned value
     // because it will redownload if local files were missing
+    uint8_t  count = 0;
     for (auto& fut : pending_downloads) {
       fut.get();
+      gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+      std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-2." << std::to_string(count) <<"】 costs: " << gapTs << "ms" << std::endl;
+      count++;
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-3】 costs: " << gapTs << "ms" << std::endl;
 
     std::atomic<size_t> next_file_meta_idx(0);
     std::function<void()> load_handlers_func([&]() {
@@ -1303,15 +1317,27 @@ class VersionBuilder::Rep {
         }
       }
     });
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-4】 costs: " << gapTs << "ms" << std::endl;
 
     std::vector<port::Thread> threads;
     for (int i = 1; i < max_threads; i++) {
-      threads.emplace_back(load_handlers_func);
+      threads.emplace_back(load_handlers_func); // TODO 判断这个逻辑是否还要继续使用？？
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-5】 costs: " << gapTs << "ms" << std::endl;
+
     load_handlers_func();
+    count = 0;
     for (auto& t : threads) {
       t.join();
+      gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+      std::cout << "【CostStatis】【Status::LoadTableHandlers】【part-5." << std::to_string(count) <<"】 costs: " << gapTs << "ms" << std::endl;
+      count++;
     }
+
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Status::LoadTableHandlers】【6】 costs: " << gapTs << "ms" << std::endl;
     Status ret;
     for (const auto& s : statuses) {
       if (!s.ok()) {
@@ -1320,6 +1346,8 @@ class VersionBuilder::Rep {
         }
       }
     }
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【Status::LoadTableHandlers】【all】 costs: " << gapTs << "ms" << std::endl;
     return ret;
   }
 };

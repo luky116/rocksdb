@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iostream>
 #include <atomic>
 #include <cinttypes>
 #include <cstdio>
@@ -5614,6 +5615,8 @@ Status VersionSet::GetCurrentManifestPath(const std::string& dbname,
 Status VersionSet::Recover(
     const std::vector<ColumnFamilyDescriptor>& column_families, bool read_only,
     std::string* db_id, bool no_error_if_files_missing) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
   // Read "CURRENT" file, which contains a pointer to the current manifest file
   std::string manifest_path;
   Status s = GetCurrentManifestPath(dbname_, fs_.get(), &manifest_path,
@@ -5628,7 +5631,7 @@ Status VersionSet::Recover(
   std::unique_ptr<SequentialFileReader> manifest_file_reader;
   {
     std::unique_ptr<FSSequentialFile> manifest_file;
-    s = fs_->NewSequentialFile(manifest_path,
+    s = fs_->NewSequentialFile(manifest_path, // 注意，fs 指的是 cloud_file_system_impl.cc 的实现，这里获取的是最新的 MANIFEST 文件。 "./pika-cloud2/data-6600-3/db/db0/0/MANIFEST-5759342050d1b3aa"
                                fs_->OptimizeForManifestRead(file_options_),
                                &manifest_file, nullptr);
     if (!s.ok()) {
@@ -5638,6 +5641,9 @@ Status VersionSet::Recover(
         std::move(manifest_file), manifest_path,
         db_options_->log_readahead_size, io_tracer_, db_options_->listeners));
   }
+
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【VersionSet::Recover】【part-1】 costs: " << gapTs << "ms" << std::endl;
   uint64_t current_manifest_file_size = 0;
   uint64_t log_number = 0;
   {
@@ -5646,10 +5652,22 @@ Status VersionSet::Recover(
     reporter.status = &log_read_status;
     log::Reader reader(nullptr, std::move(manifest_file_reader), &reporter,
                        true /* checksum */, 0 /* log_number */);
+
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionSet::Recover】【part-1.0】 costs: " << gapTs << "ms" << std::endl;
+
     VersionEditHandler handler(
         read_only, column_families, const_cast<VersionSet*>(this),
         /*track_missing_files=*/false, no_error_if_files_missing, io_tracer_);
-    handler.Iterate(reader, &log_read_status);
+
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionSet::Recover】【part-1.1】 costs: " << gapTs << "ms" << std::endl;
+
+    handler.Iterate(reader, &log_read_status); // 重点优化项
+
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionSet::Recover】【part-1.2】 costs: " << gapTs << "ms" << std::endl;
+
     s = handler.status();
     if (s.ok()) {
       log_number = handler.GetVersionEditParams().log_number_;
@@ -5658,6 +5676,8 @@ Status VersionSet::Recover(
       handler.GetDbId(db_id);
     }
   }
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【VersionSet::Recover】【part-2】 costs: " << gapTs << "ms" << std::endl;
 
   if (s.ok()) {
     manifest_file_size_ = current_manifest_file_size;
@@ -5682,6 +5702,9 @@ Status VersionSet::Recover(
                      cfd->GetName().c_str(), cfd->GetID(), cfd->GetLogNumber());
     }
   }
+
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【VersionSet::Recover】【all】 costs: " << gapTs << "ms" << std::endl;
 
   return s;
 }
