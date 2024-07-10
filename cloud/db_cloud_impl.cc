@@ -128,11 +128,11 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
                                  dbg);  // MJR: TODO: Move into sanitize
   }
 
-  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
-  std::cout << "【CostStatis】【DBCloud::Open】【part-1】 costs: " << gapTs << std::endl;
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【DBCloud::Open】【part-1】 costs: " << gapTs << "ms" << std::endl;
 
   bool new_db = false;
-  auto startTs1 = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
   // If cloud manifest is already loaded, this means the directory has been
   // sanitized (possibly by the call to ListColumnFamilies())
   if (cfs->GetCloudManifest() == nullptr) { // 1、尝试从磁盘获取本地的 CloudManifest 文件
@@ -141,7 +141,7 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
     if (st.ok()) {
       st = cfs->LoadCloudManifest(local_dbname, read_only); // 2、检查 S3 上的 Manifest-epoch 文件，并删除不是当前版本号的文件
     }
-    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
     std::cout << "【CostStatis】【DBCloud::Open】【part-2】 costs: " << gapTs << std::endl;
     if (st.IsNotFound()) {
       Log(InfoLogLevel::INFO_LEVEL, options.info_log,
@@ -164,7 +164,7 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
       return st;
     }
   }
-  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
   std::cout << "【CostStatis】【DBCloud::Open】【part-3】 costs: " << gapTs << std::endl;
 
   // Local environment, to be owned by DBCloudImpl, so that it outlives the
@@ -198,13 +198,12 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
     }
   }
 
-  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs1;
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
   std::cout << "【CostStatis】【DBCloud::Open】【part-4】 costs: " << gapTs << std::endl;
   // We do not want a very large MANIFEST file because the MANIFEST file is
   // uploaded to S3 for every update, so always enable rolling of Manifest file
    options.max_manifest_file_size = DBCloudImpl::max_manifest_file_size;
 
-   auto startTs2 = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   DB* db = nullptr;
   std::string dbid;
   if (read_only) { // TODO 这个 read_only 模式是否可以用来做 pika 的 slave？？
@@ -213,7 +212,7 @@ Status DBCloud::Open(const Options& opt, const std::string& local_dbname,
   } else {
     st = DB::Open(options, local_dbname, column_families, handles, &db); // 核心逻辑：真正初始化一个 rocksdb 的逻辑
   }
-  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs2;
+  gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
   std::cout << "【CostStatis】【DBCloud::Open】【DB::Open】 costs: " << gapTs << std::endl;
 
   if (new_db && st.ok() && cfs->HasDestBucket() &&
