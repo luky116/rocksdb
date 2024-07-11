@@ -562,7 +562,7 @@ Status VersionEditHandler::MaybeCreateVersion(const VersionEdit& /*edit*/,
       // Install new version
       v->PrepareAppend(
           *cfd->GetLatestMutableCFOptions(),
-          !(version_set_->db_options_->skip_stats_update_on_db_open));
+          !(version_set_->db_options_->skip_stats_update_on_db_open)); // skip_stats_update_on_db_open 可以控制跳过检查
       version_set_->AppendVersion(cfd, v);
     } else {
       delete v;

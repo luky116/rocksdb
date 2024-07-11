@@ -67,6 +67,7 @@ IOStatus CloudFileSystemImpl::ExistsCloudObject(const std::string& fname) {
 }
 
 IOStatus CloudFileSystemImpl::GetCloudObject(const std::string& fname) {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
   std::cout << "【CloudFileSystemImpl::GetCloudObject】dowoload file: " << fname << std::endl;
 
   auto st = IOStatus::NotFound();
@@ -78,6 +79,8 @@ IOStatus CloudFileSystemImpl::GetCloudObject(const std::string& fname) {
     st = GetStorageProvider()->GetCloudObject(GetSrcBucketName(),
                                               srcname(fname), fname);
   }
+  auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+  std::cout << "【CostStatis】【CloudFileSystemImpl::GetCloudObject】【all】 costs: " << gapTs << "ms" << std::endl;
   return st;
 }
 

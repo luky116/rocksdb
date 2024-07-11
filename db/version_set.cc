@@ -1579,11 +1579,11 @@ Status Version::GetTableProperties(std::shared_ptr<const TableProperties>* tp,
     file_name = *fname;
   } else {
     file_name =
-      TableFileName(ioptions->cf_paths, file_meta->fd.GetNumber(),
+      TableFileName(ioptions->cf_paths, file_meta->fd.GetNumber(), // 这个方法返回 SST 文件的文件名
                     file_meta->fd.GetPathId());
   }
   s = ioptions->fs->NewRandomAccessFile(file_name, file_options_, &file,
-                                        nullptr);
+                                        nullptr); // 这里会从 S3 上拉取数据
   if (!s.ok()) {
     return s;
   }
@@ -2967,7 +2967,7 @@ bool Version::MaybeInitializeFileMetaData(FileMetaData* file_meta) {
     return false;
   }
   std::shared_ptr<const TableProperties> tp;
-  Status s = GetTableProperties(&tp, file_meta);
+  Status s = GetTableProperties(&tp, file_meta); // 这里会从 S3 上拉取数据
   file_meta->init_stats_from_file = true;
   if (!s.ok()) {
     ROCKS_LOG_ERROR(vset_->db_options_->info_log,
@@ -3013,6 +3013,8 @@ void VersionStorageInfo::RemoveCurrentStats(FileMetaData* file_meta) {
 }
 
 void Version::UpdateAccumulatedStats() {
+  auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
   // maximum number of table properties loaded from files.
   const int kMaxInitCount = 20;
   int init_count = 0;
