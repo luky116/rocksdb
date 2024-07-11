@@ -1181,6 +1181,8 @@ class VersionBuilder::Rep {
 
   // Save the current state in *vstorage.
   Status SaveTo(VersionStorageInfo* vstorage) const {
+    auto startTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
+
     Status s;
 
 #ifndef NDEBUG
@@ -1197,12 +1199,21 @@ class VersionBuilder::Rep {
     }
 
     SaveSSTFilesTo(vstorage);
+    auto gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionBuilder::SaveTo】【SaveSSTFilesTo】 costs: " << gapTs << "ms" << std::endl;
 
     SaveBlobFilesTo(vstorage);
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionBuilder::SaveTo】【SaveBlobFilesTo】 costs: " << gapTs << "ms" << std::endl;
 
     SaveCompactCursorsTo(vstorage);
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionBuilder::SaveTo】【SaveCompactCursorsTo】 costs: " << gapTs << "ms" << std::endl;
 
     s = CheckConsistency(vstorage);
+
+    gapTs = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count() - startTs;
+    std::cout << "【CostStatis】【VersionBuilder::SaveTo】【all】 costs: " << gapTs << "ms" << std::endl;
     return s;
   }
 
